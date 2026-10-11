@@ -12,6 +12,7 @@ import os
 import sys
 import time
 import uuid
+import ctypes
 from ymir_features import YmirVisualMixin, location as boss_location
 from datetime import datetime
 from pathlib import Path
@@ -142,6 +143,9 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.update_busy = False
         self.latest_release = None
         self.update_repo = self.read_update_repo()
+        self.auto_update_enabled = tk.BooleanVar(value=self.read_auto_update())
+        self.last_update_check = 0
+        self.auto_update_idle_since = time.time()
         self.build_ui()
         self.after(1400, self.init_tray)
         self.after(650, self.signal_update_ready)
@@ -161,21 +165,30 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         except (OSError, ValueError, TypeError):
             return DEFAULT_UPDATE_REPO
 
+    def read_auto_update(self):
+        try:
+            data = json.loads(UPDATE_SETTINGS.read_text(encoding="utf-8"))
+            return data.get("auto_update", True) is not False
+        except (OSError, ValueError, TypeError):
+            return True
+
     def save_update_repo(self, repository):
         repository = repository.strip().removeprefix("https://github.com/").strip("/")
         if repository and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
             messagebox.showerror("Repositório inválido", "Use usuario/repositorio (ex.: equipe/ymir-timer).")
             return False
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        UPDATE_SETTINGS.write_text(json.dumps({"github_repo": repository}, indent=2), encoding="utf-8")
-        self.update_repo = repository
+        UPDATE_SETTINGS.write_text(json.dumps({"github_repo": repository or DEFAULT_UPDATE_REPO,
+                                               "auto_update": self.auto_update_enabled.get()}, indent=2),
+                                   encoding="utf-8")
+        self.update_repo = repository or DEFAULT_UPDATE_REPO
         self.latest_release = None
         return True
 
     def updates_dialog(self):
         win = tk.Toplevel(self)
         win.title("Atualizações • Ymir Boss Timer")
-        win.geometry("530x295")
+        win.geometry("530x345")
         win.resizable(False, False)
         win.configure(bg=BG)
         win.transient(self)
@@ -187,7 +200,12 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                               relief="flat", font=("Segoe UI", 11))
         repo_entry.insert(0, self.update_repo)
         repo_entry.pack(fill="x", padx=18, pady=(5, 12), ipady=8)
-        status = tk.StringVar(value="Configure o repositório e procure uma atualização.")
+        tk.Checkbutton(win, text="Instalar atualizações automaticamente quando não houver timers ativos",
+                       variable=self.auto_update_enabled, bg=BG, fg=TEXT, selectcolor=PANEL,
+                       activebackground=BG, activeforeground=TEXT,
+                       command=lambda: self.save_update_repo(repo_entry.get()),
+                       font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(0, 5))
+        status = tk.StringVar(value="Verificando o GitHub automaticamente a cada 30 minutos.")
         tk.Label(win, textvariable=status, bg=BG, fg=WARNING, wraplength=485,
                  justify="left", font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=5)
         buttons = tk.Frame(win, bg=BG)
@@ -216,6 +234,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                  messagebox.showinfo("Atualizações", "Configure o repositório GitHub em Atualizações."))
             return
         self.update_busy = True
+        self.last_update_check = time.time()
         if status_var:
             status_var.set("Verificando o GitHub Releases...")
         def work():
@@ -252,52 +271,78 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
 
     def _update_found(self, info, silent, status_var):
         self.latest_release = info
-        text = f"Nova versão {info['version']} disponível. Clique em Instalar atualização."
+        text = f"Nova versão {info['version']} disponível."
         if status_var:
-            try: status_var.set(text)
-            except tk.TclError: pass
+            try:
+                status_var.set(text + " Atualização automática quando estiver ocioso.")
+            except tk.TclError:
+                pass
         elif not silent:
-            messagebox.showinfo("Atualização disponível", text)
-        else:
-            messagebox.showinfo("Atualização disponível", text + "\nAbra Atualizações quando quiser instalar.")
+            messagebox.showinfo("Atualização disponível", text + "\nAbra Atualizações para instalar.")
+        elif not self.auto_update_enabled.get():
+            messagebox.showinfo("Atualização disponível", text + "\nAbra Atualizações para instalar.")
 
-    def install_update(self, status_var=None):
+    def install_update(self, status_var=None, auto=False):
         info = self.latest_release
         if not info:
-            messagebox.showinfo("Atualizações", "Clique primeiro em Salvar e verificar.")
+            if not auto:
+                messagebox.showinfo("Atualizações", "Clique primeiro em Salvar e verificar.")
             return
         if not getattr(sys, "frozen", False) or os.name != "nt":
-            messagebox.showinfo("Atualizações", "Instalação direta disponível no executável Windows (.exe).\nUse GERAR_EXE.bat para gerar o aplicativo.")
+            if not auto:
+                messagebox.showinfo("Atualizações", "Instalação direta requer o executável Windows (.exe).")
             return
         if self.update_busy:
             return
-        if not messagebox.askyesno("Instalar atualização", f"Instalar {info['version']}? O aplicativo reiniciará e os timers serão preservados."):
+        if auto and any(b.get("end", 0) > time.time() for b in self.bosses):
+            return  # Nunca interromper respawns em andamento.
+        if not auto and not messagebox.askyesno(
+            "Instalar atualização", f"Instalar {info['version']}? O aplicativo reiniciará e seus dados serão preservados."
+        ):
             return
         self.update_busy = True
         if status_var:
-            status_var.set("Baixando e verificando integridade SHA-256...")
+            status_var.set("Baixando e verificando SHA-256...")
         def work():
+            stage = None
             try:
-                req = lambda url: urllib.request.Request(url, headers={"User-Agent": f"YmirBossTimer/{APP_VERSION}"})
+                def req(url):
+                    if not url.startswith("https://github.com/") and not url.startswith(
+                        "https://objects.githubusercontent.com/"
+                    ):
+                        raise ValueError("URL de download fora dos servidores GitHub.")
+                    return urllib.request.Request(url, headers={"User-Agent": f"YmirBossTimer/{APP_VERSION}"})
                 with urllib.request.urlopen(req(info["sha256"]), timeout=25) as res:
                     checksum_text = res.read(2048).decode("utf-8").strip()
                 match = re.search(r"\b[a-fA-F0-9]{64}\b", checksum_text)
                 if not match:
-                    raise ValueError("Checksum SHA-256 inválido.")
+                    raise ValueError("SHA-256 inválido.")
                 target = Path(sys.executable).resolve()
                 stage = target.with_name(target.name + ".new")
                 digest = hashlib.sha256()
+                total_bytes = 0
                 with urllib.request.urlopen(req(info["exe"]), timeout=60) as res, stage.open("wb") as output:
                     while True:
                         chunk = res.read(1024 * 1024)
-                        if not chunk: break
+                        if not chunk:
+                            break
                         output.write(chunk)
                         digest.update(chunk)
-                if digest.hexdigest().lower() != match.group(0).lower():
-                    stage.unlink(missing_ok=True)
-                    raise ValueError("SHA-256 não confere. Instalação cancelada.")
+                        total_bytes += len(chunk)
+                        if total_bytes > 150 * 1024 * 1024:
+                            raise ValueError("Download excedeu o limite de 150 MB.")
+                if total_bytes < 200_000 or digest.hexdigest().lower() != match.group(0).lower():
+                    raise ValueError("O executável está incompleto ou seu SHA-256 não confere.")
+                with stage.open("rb") as binary:
+                    if binary.read(2) != b"MZ":
+                        raise ValueError("O arquivo baixado não é um executável Windows.")
                 self.after(0, lambda: self._launch_update(stage, target))
             except (OSError, ValueError, urllib.error.URLError) as exc:
+                if stage is not None:
+                    try:
+                        stage.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 self.after(0, lambda err=str(exc): self._update_failed(err))
         threading.Thread(target=work, daemon=True).start()
 
@@ -306,24 +351,50 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         messagebox.showerror("Falha na atualização", err)
 
     def _launch_update(self, stage, target):
-        # Um processo externo espera o EXE encerrar para substituir seu arquivo.
-        # Nenhum arquivo de dados do usuário é modificado pelo atualizador.
+        """Substitui o EXE via processo externo e volta à versão anterior se a nova falhar."""
         script = Path(tempfile.gettempdir()) / f"ymir-update-{os.getpid()}.ps1"
-        def psquote(value):
+        def quote(value):
             return "'" + str(value).replace("'", "''") + "'"
+        backup = target.with_name(target.name + ".previous")
+        ready = target.with_name(target.name + ".ready")
         script.write_text(
-            f"$target = {psquote(target)}\n"
-            f"$stage = {psquote(stage)}\n"
+            f"$target = {quote(target)}\n"
+            f"$stage = {quote(stage)}\n"
+            f"$backup = {quote(backup)}\n"
+            f"$marker = {quote(ready)}\n"
             f"$parentId = {os.getpid()}\n"
-            "try { Wait-Process -Id $parentId -Timeout 45 -ErrorAction SilentlyContinue } catch {}\n"
-            "Start-Sleep -Milliseconds 600\n"
-            "for ($i=0; $i -lt 20; $i++) {\n"
-            "  try { Move-Item -LiteralPath $stage -Destination $target -Force -ErrorAction Stop; "
-            "Start-Process -FilePath $target; exit 0 } catch { Start-Sleep -Seconds 1 }\n"
-            "}\n"
-            "Add-Type -AssemblyName System.Windows.Forms\n"
-            "[System.Windows.Forms.MessageBox]::Show('Não foi possível substituir o aplicativo. "
-            "Verifique permissões e antivírus.', 'Ymir Boss Timer')\n",
+            "try { Wait-Process -Id $parentId -Timeout 60 -ErrorAction SilentlyContinue } catch {}\n"
+            "Start-Sleep -Milliseconds 700\n"
+            "try {\n"
+            "  if (Test-Path $backup) { Remove-Item -LiteralPath $backup -Force }\n"
+            "  Move-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop\n"
+            "  Move-Item -LiteralPath $stage -Destination $target -Force -ErrorAction Stop\n"
+            "  Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue\n"
+            "  $env:YMIR_READY_MARKER = $marker\n"
+            "  $child = Start-Process -FilePath $target -PassThru -ErrorAction Stop\n"
+            "  $success = $false\n"
+            "  for ($i=0; $i -lt 35; $i++) {\n"
+            "    Start-Sleep -Seconds 1\n"
+            "    $child.Refresh()\n"
+            "    if ((Test-Path $marker) -and -not $child.HasExited) { $success = $true; break }\n"
+            "    if ($child.HasExited) { break }\n"
+            "  }\n"
+            "  if (-not $success) { throw 'A nova versão não iniciou corretamente.' }\n"
+            "  Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue\n"
+            "  Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue\n"
+            "  exit 0\n"
+            "} catch {\n"
+            "  try { if ($child -and -not $child.HasExited) { Stop-Process -Id $child.Id -Force } } catch {}\n"
+            "  Start-Sleep -Milliseconds 500\n"
+            "  if (Test-Path $backup) {\n"
+            "    Copy-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue\n"
+            "    Remove-Item -LiteralPath $env:YMIR_READY_MARKER -Force -ErrorAction SilentlyContinue\n"
+            "    $env:YMIR_READY_MARKER = ''\n"
+            "    Start-Process -FilePath $target -ErrorAction SilentlyContinue\n"
+            "  }\n"
+            "  Add-Type -AssemblyName System.Windows.Forms\n"
+            "  [System.Windows.Forms.MessageBox]::Show('A atualização falhou e a versão anterior foi restaurada.','Ymir Boss Timer')\n"
+            "}\n",
             encoding="utf-8")
         try:
             subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
