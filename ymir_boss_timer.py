@@ -970,8 +970,22 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
             self.bell()
 
     def notify(self, boss_name, title, description):
-        """Aviso visual não bloqueante com som, sem bibliotecas extras."""
+        """Aviso sonoro + toast nativo Windows; popup como alternativa."""
         self.sound()
+        toast_ok = False
+        if os.name == "nt":
+            try:
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                    "YmirBossTimer.LegendOfYmir")
+                from winotify import Notification
+                toast = Notification(app_id="Ymir Boss Timer", title=title,
+                                     msg=f"{boss_name}\n{description}", duration="short")
+                toast.show()
+                toast_ok = True
+            except Exception:
+                toast_ok = False
+        if toast_ok:
+            return
         popup = tk.Toplevel(self)
         popup.title(title)
         popup.configure(bg=PANEL)
@@ -1030,10 +1044,32 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                 status.config(text="Contando...", fg=MUTED)
 
     def tick(self):
-        self.check_alerts()
+        self.check_alerts()  # Todos os canais e pisos, mesmo recolhidos.
         self.refresh_times()
         self.refresh_compact()
         self.refresh_category_headers()
+        self.refresh_overlay()
+        self.process_tray_commands()
+        now = time.time()
+        if now - self.last_upcoming_refresh >= 1:
+            self.render_upcoming()
+            self.last_upcoming_refresh = now
+        if now - self.last_backup_at >= 6 * 3600:
+            try:
+                backup_data()
+            except OSError:
+                pass
+            self.last_backup_at = now
+        if now - self.last_update_check >= 30 * 60:
+            self.check_updates(silent=True)
+        if self.latest_release and self.auto_update_enabled.get() and not self.update_busy:
+            active = any(b.get("end", 0) > now for b in self.bosses)
+            if active:
+                self.auto_update_idle_since = now
+            elif now - self.auto_update_idle_since >= 120:
+                self.install_update(auto=True)
+        else:
+            self.auto_update_idle_since = now
         self.after(500, self.tick)
 
     def open_backup_folder(self):
