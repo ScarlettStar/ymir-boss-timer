@@ -16,7 +16,8 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.8.0"
+DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "YmirBossTimer"
@@ -75,9 +76,9 @@ class BossTimerApp(tk.Tk):
         try:
             data = json.loads(UPDATE_SETTINGS.read_text(encoding="utf-8"))
             repo = data.get("github_repo", "")
-            return repo if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo) else ""
+            return repo if re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo) else DEFAULT_UPDATE_REPO
         except (OSError, ValueError, TypeError):
-            return ""
+            return DEFAULT_UPDATE_REPO
 
     def save_update_repo(self, repository):
         repository = repository.strip().removeprefix("https://github.com/").strip("/")
