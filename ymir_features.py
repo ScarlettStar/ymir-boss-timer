@@ -98,7 +98,7 @@ class YmirVisualMixin:
         win.title("Ymir • Gamer overlay")
         win.configure(bg=BG)
         win.overrideredirect(True)
-        win.geometry("395x345+80+85")
+        win.geometry("395x385+80+85")
         win.attributes("-topmost", True)
         win.attributes("-alpha", 0.90)
         head = tk.Frame(win, bg="#26364e")
