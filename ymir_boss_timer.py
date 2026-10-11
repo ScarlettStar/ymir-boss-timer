@@ -1050,6 +1050,8 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.refresh_category_headers()
         self.refresh_overlay()
         self.process_tray_commands()
+        if not self.winfo_exists():
+            return
         now = time.time()
         if now - self.last_upcoming_refresh >= 1:
             self.render_upcoming()
