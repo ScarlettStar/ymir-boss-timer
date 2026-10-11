@@ -110,8 +110,8 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("760x800")
-        self.minsize(620, 450)
+        self.geometry("830x800")
+        self.minsize(680, 450)
         self.configure(bg=BG)
         self._channel_migrated = False
         self._floor_migrated = False
