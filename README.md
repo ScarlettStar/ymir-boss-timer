@@ -72,3 +72,12 @@ Uma cópia de segurança dos dados é criada antes da alteração.
 O aplicativo v2.0 verifica as novas versões e instala a v2.1 quando estiver
 aberto e sem timers ativos por pelo menos dois minutos (se a opção de
 atualização automática estiver habilitada).
+
+
+## Versão 2.1.1 — correção do instalador
+
+- Corrige a verificação do processo de inicialização do executável \`--onefile\` do PyInstaller: a atualização agora aguarda um marcador escrito pela própria interface, com número da versão, em vez de presumir falha pelo encerramento de um processo intermediário.
+- Mantém backup do executável antigo até a nova versão confirmar que abriu, com tentativa de restauração em caso de falha.
+- Adiciona arquivo de diagnóstico local em \`%APPDATA%\YmirBossTimer\update.log\`; o PowerShell é gravado com BOM UTF-8 para preservar acentuação no Windows.
+- Acrescenta teste de inicialização do EXE ao fluxo de publicação no GitHub Actions, além dos testes unitários.
+- **Para quem ficou na v2.0 após um rollback da v2.1:** atualize uma única vez instalando o executável v2.1.1 publicado no Release, com o aplicativo antigo fechado e guardando a cópia do antigo executável. Os arquivos dos bosses permanecem em \`%APPDATA%\YmirBossTimer\`.
