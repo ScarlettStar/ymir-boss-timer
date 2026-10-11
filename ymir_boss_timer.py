@@ -16,10 +16,28 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.9.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
+MYRKHEIMR = "Bosses Myrkheimr"
+CHANNELS = ("CHN 1", "CHN 2")
+
+
+def channel_group_key(channel):
+    return f"{MYRKHEIMR} • {channel}"
+
+
+def clone_for_channel(boss, channel):
+    """Cria o mesmo boss no outro canal, com timer independente e ainda não iniciado."""
+    return {**boss, "id": uuid.uuid4().hex, "channel": channel,
+            "end": 0, "last_kill": 0, "warned_for": 0, "finished_for": 0}
+
+
+def boss_alert_label(boss):
+    if boss.get("category") == MYRKHEIMR:
+        return f"{boss['name']} • Myrkheimr {boss.get('channel', CHANNELS[0])}"
+    return boss["name"]
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "YmirBossTimer"
 DATA_FILE = DATA_DIR / "bosses.json"
 HISTORY_FILE = DATA_DIR / "history.json"
@@ -50,6 +68,7 @@ class BossTimerApp(tk.Tk):
         self.geometry("760x800")
         self.minsize(620, 450)
         self.configure(bg=BG)
+        self._channel_migrated = False
         self.bosses = self.load()
         self.history = self.load_history()
         self.active_tab = "timers"
@@ -61,11 +80,14 @@ class BossTimerApp(tk.Tk):
         self.compact_labels = {}
         self.category_headers = []
         self.collapsed = {category: False for category in CATEGORIES}
+        self.collapsed.update({channel_group_key(ch): False for ch in CHANNELS})
         self.category_var = tk.StringVar(value=CATEGORIES[0])
         self.update_busy = False
         self.latest_release = None
         self.update_repo = self.read_update_repo()
         self.build_ui()
+        if self._channel_migrated:
+            self.save()  # Registra a migração e evita recriar CHN 2 em outras inicializações.
         self.after(3000, lambda: self.check_updates(silent=True))
         self.render()
         self.render_history()
@@ -262,13 +284,22 @@ class BossTimerApp(tk.Tk):
                         continue
                     name = str(x.get("name", "")).strip()[:60]
                     minutes = int(x.get("minutes", 0))
-                    if name and 1 <= minutes <= 10080:
-                        clean.append({"id": str(x.get("id", uuid.uuid4().hex)), "name": name,
-                                      "minutes": minutes, "category": x.get("category") if x.get("category") in CATEGORIES else CATEGORIES[0],
-                                      "end": float(x.get("end", 0)),
-                                      "warned_for": float(x.get("warned_for", 0)),
-                                      "finished_for": float(x.get("finished_for", 0)),
-                                      "last_kill": float(x.get("last_kill", 0))})
+                    if not name or not 1 <= minutes <= 10080:
+                        continue
+                    category = x.get("category") if x.get("category") in CATEGORIES else CATEGORIES[0]
+                    channel = x.get("channel") if x.get("channel") in CHANNELS else CHANNELS[0]
+                    boss = {"id": str(x.get("id", uuid.uuid4().hex)), "name": name,
+                            "minutes": minutes, "category": category, "channel": channel if category == MYRKHEIMR else "",
+                            "end": float(x.get("end", 0)),
+                            "warned_for": float(x.get("warned_for", 0)),
+                            "finished_for": float(x.get("finished_for", 0)),
+                            "last_kill": float(x.get("last_kill", 0))}
+                    clean.append(boss)
+                    # Migração v1.8: mantém o ID e o timer originais no CHN 1;
+                    # gera só uma cópia INATIVA no CHN 2 para não inventar horário.
+                    if category == MYRKHEIMR and x.get("channel") not in CHANNELS:
+                        clean.append(clone_for_channel(boss, CHANNELS[1]))
+                        self._channel_migrated = True
                 return clean
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             pass
@@ -327,7 +358,7 @@ class BossTimerApp(tk.Tk):
             name.pack(fill="x", padx=12, pady=(9, 2))
             tk.Label(name, text=r["name"], fg=TEXT, bg=row.cget("bg"),
                      font=("Segoe UI", 11, "bold"), anchor="w").pack(side="left")
-            tk.Label(name, text=r["category"], fg=PURPLE, bg=row.cget("bg"),
+            tk.Label(name, text=(f"{r['category']} • {r.get('channel', CHANNELS[0])}" if r["category"] == MYRKHEIMR else r["category"]), fg=PURPLE, bg=row.cget("bg"),
                      font=("Segoe UI", 9), anchor="e").pack(side="right")
             details = tk.Frame(row, bg=row.cget("bg"))
             details.pack(fill="x", padx=12, pady=(1, 10))
@@ -368,7 +399,7 @@ class BossTimerApp(tk.Tk):
         header.pack(fill="x", padx=16, pady=(16, 8))
         tk.Label(header, text="⚔  YMIR BOSS TIMER", bg=BG, fg=ACCENT,
                  font=("Segoe UI", 23, "bold")).pack(anchor="w")
-        tk.Label(header, text="LEGEND OF YMIR   /   CENTRAL DE RESPAWNS   /   v1.7", bg=BG, fg=MUTED,
+        tk.Label(header, text=f"LEGEND OF YMIR   /   CENTRAL DE RESPAWNS   /   v{APP_VERSION}", bg=BG, fg=MUTED,
                  font=("Segoe UI", 10)).pack(anchor="w", pady=(2, 0))
         nav = tk.Frame(self, bg=BG)
         nav.pack(fill="x", padx=16, pady=(10, 2))
@@ -524,21 +555,24 @@ class BossTimerApp(tk.Tk):
         self.collapsed[category] = not self.collapsed[category]
         self.render()
 
-    def category_header(self, parent, category, group, compact=False):
+    def category_header(self, parent, category, group, compact=False, nested=False):
         collapsed = self.collapsed[category]
         header = tk.Frame(parent, bg=PANEL)
-        header.pack(fill="x", pady=(8, 5), padx=(0, 7) if compact else 0)
+        indent = 18 if nested else 0
+        header.pack(fill="x", pady=(5 if nested else 8, 5),
+                    padx=(indent, 7 if compact else 0))
         title = self.category_title(category, group)
         button = tk.Button(header, text=title, command=lambda c=category: self.toggle_category(c),
-                  bg=PANEL, fg=ACCENT, anchor="w", relief="flat", cursor="hand2",
-                  font=("Segoe UI", 9 if compact else 11, "bold"), padx=8,
-                  activebackground=PANEL, activeforeground=TEXT)
+                   bg=PANEL, fg=PURPLE if nested else ACCENT, anchor="w",
+                   relief="flat", cursor="hand2",
+                   font=("Segoe UI", 9 if compact or nested else 11, "bold"),
+                   padx=8, activebackground=PANEL, activeforeground=TEXT)
         button.pack(fill="x", pady=5)
         self.category_headers.append((category, button))
-        # A seção fechada oculta cartões, nunca os timers nem os avisos.
+        # Recolher uma seção só esconde os cartões. O monitoramento segue global.
 
     def category_title(self, category, group):
-        """Contagem por seção, inclusive quando a seção está recolhida."""
+        """Contagem por seção e por canal, mesmo quando recolhidos."""
         now = time.time()
         soon = sum(1 for boss in group if boss.get("end", 0) > now
                    and boss["end"] - now <= NEAR_RESPAWN_SECONDS)
@@ -548,15 +582,51 @@ class BossTimerApp(tk.Tk):
         suffix = f"  • {soon} em até 5 min" if soon else ""
         if ready:
             suffix += f"  • {ready} disponível(is)"
-        return f"{prefix}  {category.upper()} ({len(group)}){suffix}"
+        label = category.split(" • ")[-1] if category.startswith(MYRKHEIMR + " • ") else category.upper()
+        return f"{prefix}  {label} ({len(group)}){suffix}"
+
+    def group_for_header(self, category):
+        if category.startswith(MYRKHEIMR + " • "):
+            channel = category.split(" • ")[-1]
+            return [b for b in self.bosses
+                    if b.get("category") == MYRKHEIMR and b.get("channel") == channel]
+        return [b for b in self.bosses if b.get("category", CATEGORIES[0]) == category]
+
+    def render_sections(self, parent, compact=False):
+        """Monta Universais, Myrkheimr (CHN 1 e CHN 2) e Fólkvangr."""
+        make_card = self.make_compact_card if compact else self.make_full_card
+        for category in CATEGORIES:
+            group = self.group_for_header(category)
+            self.category_header(parent, category, group, compact=compact)
+            if self.collapsed[category]:
+                continue
+            if category == MYRKHEIMR:
+                for channel in CHANNELS:
+                    key = channel_group_key(channel)
+                    group_channel = self.group_for_header(key)
+                    self.category_header(parent, key, group_channel, compact=compact, nested=True)
+                    if self.collapsed[key]:
+                        continue
+                    if not group_channel and not compact:
+                        tk.Label(parent, text="Nenhum boss neste canal", bg=BG, fg=MUTED,
+                                 anchor="w", font=("Segoe UI", 9)).pack(fill="x", padx=26, pady=(0, 8))
+                    for boss in group_channel:
+                        make_card(boss, nested=True)
+            else:
+                if not group and not compact:
+                    tk.Label(parent, text="Nenhum boss nesta seção", bg=BG, fg=MUTED,
+                             anchor="w", font=("Segoe UI", 9)).pack(fill="x", pady=(0, 8))
+                for boss in group:
+                    make_card(boss, nested=False)
 
     def refresh_category_headers(self):
         for category, button in self.category_headers:
             if button.winfo_exists():
-                group = [boss for boss in self.bosses if boss.get("category", CATEGORIES[0]) == category]
+                group = self.group_for_header(category)
                 button.config(text=self.category_title(category, group),
                               fg=WARNING if any(0 < b.get("end", 0) - time.time() <= NEAR_RESPAWN_SECONDS
-                                                for b in group) else ACCENT)
+                                                for b in group)
+                              else (PURPLE if category.startswith(MYRKHEIMR + " • ") else ACCENT))
 
     def render_compact(self):
         if self.compact is None or not self.compact.winfo_exists():
@@ -568,17 +638,12 @@ class BossTimerApp(tk.Tk):
         if not self.bosses:
             tk.Label(self.mini_cards, text="Cadastre bosses no modo completo.",
                      bg=BG, fg=MUTED, pady=20).pack()
-        for category in CATEGORIES:
-            group = [b for b in self.bosses if b.get("category", CATEGORIES[0]) == category]
-            self.category_header(self.mini_cards, category, group, compact=True)
-            if not self.collapsed[category]:
-                for boss in group:
-                    self.make_compact_card(boss)
+        self.render_sections(self.mini_cards, compact=True)
         self.refresh_compact()
 
-    def make_compact_card(self, boss):
+    def make_compact_card(self, boss, nested=False):
             row = tk.Frame(self.mini_cards, bg=PANEL)
-            row.pack(fill="x", pady=(0, 6), padx=(0, 7))
+            row.pack(fill="x", pady=(0, 6), padx=(26 if nested else 0, 7))
             top = tk.Frame(row, bg=PANEL)
             top.pack(fill="x", padx=9, pady=(6, 0))
             tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
@@ -621,7 +686,14 @@ class BossTimerApp(tk.Tk):
         if not name or len(name) > 60 or not 1 <= minutes <= 10080:
             messagebox.showwarning("Dados inválidos", "Informe um nome (até 60 caracteres) e tempo entre 1 e 10080 minutos.")
             return
-        self.bosses.append({"id": uuid.uuid4().hex, "name": name, "minutes": minutes, "category": self.category_var.get(), "end": 0, "warned_for": 0, "finished_for": 0, "last_kill": 0})
+        category = self.category_var.get()
+        boss = {"id": uuid.uuid4().hex, "name": name, "minutes": minutes,
+                "category": category, "channel": CHANNELS[0] if category == MYRKHEIMR else "",
+                "end": 0, "warned_for": 0, "finished_for": 0, "last_kill": 0}
+        self.bosses.append(boss)
+        if category == MYRKHEIMR:
+            # Um cadastro em Myrkheimr gera os dois canais; os timers são separados.
+            self.bosses.append(clone_for_channel(boss, CHANNELS[1]))
         self.name_entry.delete(0, "end")
         self.minutes_entry.delete(0, "end")
         self.save()
@@ -632,6 +704,7 @@ class BossTimerApp(tk.Tk):
         boss["end"] = killed_at + boss["minutes"] * 60
         boss["last_kill"] = killed_at
         self.history.append({"name": boss["name"], "category": boss.get("category", CATEGORIES[0]),
+                             "channel": boss.get("channel", "") if boss.get("category") == MYRKHEIMR else "",
                              "killed_at": killed_at, "respawn_at": boss["end"],
                              "boss_id": boss["id"]})
         self.history = self.history[-MAX_HISTORY:]
@@ -654,7 +727,7 @@ class BossTimerApp(tk.Tk):
         self.render()
 
     def delete(self, boss):
-        if messagebox.askyesno("Remover boss", f"Remover '{boss['name']}' da lista?"):
+        if messagebox.askyesno("Remover boss", f"Remover '{boss_alert_label(boss)}' da lista?"):
             self.bosses = [b for b in self.bosses if b["id"] != boss["id"]]
             self.save()
             self.render()
@@ -669,21 +742,13 @@ class BossTimerApp(tk.Tk):
         if not self.bosses:
             tk.Label(self.cards, text="Nenhum boss cadastrado.\nAdicione o primeiro acima.",
                      bg=BG, fg=MUTED, font=("Segoe UI", 11), pady=34).pack(fill="x")
-        for category in CATEGORIES:
-            group = [b for b in self.bosses if b.get("category", CATEGORIES[0]) == category]
-            self.category_header(self.cards, category, group)
-            if not self.collapsed[category]:
-                if not group:
-                    tk.Label(self.cards, text="Nenhum boss nesta seção", bg=BG, fg=MUTED,
-                             anchor="w", font=("Segoe UI", 9)).pack(fill="x", pady=(0, 8))
-                for boss in group:
-                    self.make_full_card(boss)
+        self.render_sections(self.cards)
         self.refresh_times()
         self.render_compact()
 
-    def make_full_card(self, boss):
+    def make_full_card(self, boss, nested=False):
             card = tk.Frame(self.cards, bg=PANEL)
-            card.pack(fill="x", pady=(0, 9), ipady=9)
+            card.pack(fill="x", pady=(0, 9), ipady=9, padx=(26 if nested else 0, 0))
             top = tk.Frame(card, bg=PANEL)
             top.pack(fill="x", padx=12, pady=(4, 3))
             tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
@@ -722,10 +787,16 @@ class BossTimerApp(tk.Tk):
             category_select.bind("<<ComboboxSelected>>", lambda _e, b=boss, c=category_select: self.change_category(b, c.get()))
 
     def change_category(self, boss, category):
-        if category in CATEGORIES and boss.get("category") != category:
-            boss["category"] = category
-            self.save()
-            self.render()
+        if category not in CATEGORIES or boss.get("category") == category:
+            return
+        boss["category"] = category
+        if category == MYRKHEIMR:
+            boss["channel"] = CHANNELS[0]
+            self.bosses.append(clone_for_channel(boss, CHANNELS[1]))
+        else:
+            boss["channel"] = ""
+        self.save()
+        self.render()
 
     def sound(self):
         try:
@@ -765,11 +836,11 @@ class BossTimerApp(tk.Tk):
                 if boss.get("finished_for", 0) != end:
                     boss["finished_for"] = end
                     self.save()
-                    self.notify(boss["name"], "Boss disponível!", "O horário de respawn chegou.")
+                    self.notify(boss_alert_label(boss), "Boss disponível!", "O horário de respawn chegou.")
             elif remaining <= 60 and boss.get("warned_for", 0) != end:
                 boss["warned_for"] = end
                 self.save()
-                self.notify(boss["name"], "Falta 1 minuto!",
+                self.notify(boss_alert_label(boss), "Falta 1 minuto!",
                             "Nasce às " + datetime.fromtimestamp(end).strftime("%H:%M:%S"))
 
     def refresh_times(self):
