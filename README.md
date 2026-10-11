@@ -50,3 +50,25 @@ O mecanismo de atualização verifica SHA-256 e exige confirmação. O SHA-256 d
 **Primeira atualização de 1.9 para 2.0:** a v1.9 ainda usa o mecanismo manual, então faça essa transição pelo botão "Atualizações → Salvar e verificar → Instalar atualização". As seguintes poderão acontecer sem esse clique, enquanto o aplicativo estiver aberto e sem contagens ativas.
 
 **Notas de uso:** o overlay é uma janela externa sempre no topo, mais compatível com jogos em modo janela sem bordas; não é garantido que apareça sobre tela cheia exclusiva. Para encerrar o programa, use "Sair" no ícone da bandeja. O SmartScreen pode alertar porque o EXE ainda não é assinado. Não desative proteções do Windows. O EXE Windows, a bandeja e as notificações precisam ser validados na máquina do usuário.
+
+
+## Versão 2.1.0 — editar tempo de respawn
+
+O botão **Editar tempo** aparece no cartão de cada boss na tela completa.
+Digite a nova duração em minutos (de 1 a 10080) e clique em **Salvar alterações**.
+Para Myrkheimr (CHN 1 e CHN 2) ou Fólkvangr (P1, P2, P3 e P4 UNIVERSAL),
+a opção marcada por padrão **Aplicar também a todas as cópias desta região**
+altera a duração em todos os canais/pisos do mesmo boss. É possível desmarcar
+para editar apenas um canal ou piso.
+
+**Timers já iniciados:** o horário de nascimento é recalculado usando a
+última morte de cada cópia (não a hora em que você editou). Os alertas de
+1 minuto e de respawn são ajustados à nova previsão. Bosses sem timer
+iniciado permanecem aguardando uma morte. O histórico mantém as mortes e
+corrige a previsão vinculada à última morte registrada, sem apagar entradas.
+Uma cópia de segurança dos dados é criada antes da alteração.
+
+**Atualização:** o código publica automaticamente pelo GitHub Actions.
+O aplicativo v2.0 verifica as novas versões e instala a v2.1 quando estiver
+aberto e sem timers ativos por pelo menos dois minutos (se a opção de
+atualização automática estiver habilitada).
