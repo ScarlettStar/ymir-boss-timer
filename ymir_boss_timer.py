@@ -915,6 +915,9 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
             top.pack(fill="x", padx=12, pady=(4, 3))
             tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
                      font=("Segoe UI", 11, "bold"), anchor="w").pack(side="left", fill="x", expand=True)
+            tk.Button(top, text="Editar tempo", command=lambda b=boss: self.edit_respawn_dialog(b),
+                      bg="#34465e", fg=ACCENT, relief="flat", cursor="hand2",
+                      font=("Segoe UI", 9, "bold"), padx=10, pady=3).pack(side="right", padx=(0, 7))
             tk.Button(top, text="✕", command=lambda b=boss: self.delete(b), bg=PANEL,
                       fg=MUTED, relief="flat", cursor="hand2").pack(side="right")
             mid = tk.Frame(card, bg=PANEL)
@@ -947,6 +950,130 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
             category_select.set(boss.get("category", CATEGORIES[0]))
             category_select.pack(side="right", padx=(2, 5))
             category_select.bind("<<ComboboxSelected>>", lambda _e, b=boss, c=category_select: self.change_category(b, c.get()))
+
+    def matching_respawn_copies(self, boss):
+        """Cópias com mesmo nome, na mesma região, mas IDs e timers próprios."""
+        category = boss.get("category", CATEGORIES[0])
+        if category not in (MYRKHEIMR, FOLKVANGR):
+            return [boss]
+        name = boss["name"].strip().casefold()
+        return [entry for entry in self.bosses
+                if entry.get("category") == category
+                and entry.get("name", "").strip().casefold() == name]
+
+    def change_respawn_duration(self, boss, new_minutes, all_copies=False):
+        """Corrige duração sem apagar timers, IDs, kills ou histórico."""
+        if (isinstance(new_minutes, bool) or not isinstance(new_minutes, int)
+                or not 1 <= new_minutes <= 10080):
+            raise ValueError("O tempo deve ser um inteiro entre 1 e 10080 minutos.")
+        targets = self.matching_respawn_copies(boss) if all_copies else [boss]
+        now = time.time()
+        changed = 0
+        history_changed = False
+        for target in targets:
+            if target["minutes"] == new_minutes:
+                continue
+            old_end = target.get("end", 0)
+            killed_at = target.get("last_kill", 0)
+            target["minutes"] = new_minutes
+            if old_end and killed_at:
+                new_end = killed_at + new_minutes * 60
+                target["end"] = new_end
+                if new_end > now:
+                    target["warned_for"] = 0
+                    target["finished_for"] = 0
+                else:
+                    target["warned_for"] = new_end
+                    target["finished_for"] = new_end if old_end <= now else 0
+                for item in reversed(self.history):
+                    if item.get("boss_id") != target["id"]:
+                        continue
+                    if abs(float(item.get("killed_at", 0)) - killed_at) < 0.01:
+                        item["respawn_at"] = new_end
+                        history_changed = True
+                    break
+            self.alerted.discard(target["id"])
+            self.warning_alerted.discard(target["id"])
+            changed += 1
+        if changed:
+            self.save()
+            if history_changed:
+                self.save_history()
+                self.render_history()
+            self.render()
+        return changed
+
+    def edit_respawn_dialog(self, boss):
+        win = tk.Toplevel(self)
+        win.title("Editar tempo de respawn")
+        win.geometry("480x310")
+        win.resizable(False, False)
+        win.configure(bg=BG)
+        win.transient(self)
+        win.grab_set()
+        area = tk.Frame(win, bg=BG)
+        area.pack(fill="both", expand=True, padx=19, pady=15)
+        tk.Label(area, text="EDITAR TEMPO DE RESPAWN", bg=BG, fg=ACCENT,
+                 font=("Segoe UI", 16, "bold")).pack(anchor="w", pady=(0, 9))
+        tk.Label(area, text=f"{boss['name']}  •  {boss_location(boss)}", bg=BG, fg=TEXT,
+                 font=("Segoe UI", 11, "bold"), wraplength=440).pack(anchor="w", pady=(0, 10))
+        tk.Label(area, text=f"Tempo atual: {boss['minutes']} minutos", bg=BG,
+                 fg=MUTED).pack(anchor="w")
+        value_var = tk.StringVar(value=str(boss["minutes"]))
+        entry = tk.Entry(area, textvariable=value_var, bg=PANEL, fg=TEXT,
+                         insertbackground=TEXT, relief="flat", width=12,
+                         font=("Consolas", 14))
+        entry.pack(anchor="w", ipady=5, pady=(5, 11))
+        entry.select_range(0, "end")
+        entry.focus_set()
+        copies = self.matching_respawn_copies(boss)
+        together = tk.BooleanVar(value=len(copies) > 1)
+        if len(copies) > 1:
+            tk.Checkbutton(area,
+                           text=f"Aplicar também a todas as {len(copies)} cópias desta região",
+                           variable=together, bg=BG, fg=ACCENT, selectcolor=PANEL,
+                           activebackground=BG, activeforeground=TEXT,
+                           font=("Segoe UI", 10)).pack(anchor="w", pady=(0, 9))
+        tk.Label(area, text="O respawn será recalculado pela última morte de cada\n"
+                             "piso/canal. Não altera as mortes anteriores do histórico.",
+                 bg=BG, fg=MUTED, justify="left",
+                 font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 12))
+        buttons = tk.Frame(area, bg=BG)
+        buttons.pack(fill="x")
+
+        def save_new_time():
+            raw = value_var.get().strip()
+            if not raw.isdecimal():
+                messagebox.showwarning("Tempo inválido", "Informe minutos inteiros.",
+                                       parent=win)
+                return
+            new_minutes = int(raw)
+            if not 1 <= new_minutes <= 10080:
+                messagebox.showwarning("Tempo inválido", "Informe de 1 a 10080 minutos.",
+                                       parent=win)
+                return
+            targets = copies if together.get() else [boss]
+            if all(b["minutes"] == new_minutes for b in targets):
+                win.destroy()
+                return
+            try:
+                backup_data()
+            except OSError as exc:
+                messagebox.showerror("Backup não realizado",
+                                     f"Não foi possível criar backup antes da edição:\n{exc}",
+                                     parent=win)
+                return
+            self.change_respawn_duration(boss, new_minutes, all_copies=together.get())
+            win.destroy()
+
+        tk.Button(buttons, text="Salvar alterações", command=save_new_time,
+                  bg=ACCENT, fg=BG, relief="flat", cursor="hand2",
+                  font=("Segoe UI", 10, "bold"), padx=13).pack(side="left")
+        tk.Button(buttons, text="Cancelar", command=win.destroy,
+                  bg=PANEL, fg=TEXT, relief="flat", cursor="hand2",
+                  padx=10).pack(side="left", padx=10)
+        win.bind("<Return>", lambda _event: save_new_time())
+        win.bind("<Escape>", lambda _event: win.destroy())
 
     def change_category(self, boss, category):
         if category not in CATEGORIES or boss.get("category") == category:
