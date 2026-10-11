@@ -351,51 +351,134 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         messagebox.showerror("Falha na atualização", err)
 
     def _launch_update(self, stage, target):
-        """Substitui o EXE via processo externo e volta à versão anterior se a nova falhar."""
+        """Troca o EXE, aguardando sinal real da interface e restaurando em falhas."""
         script = Path(tempfile.gettempdir()) / f"ymir-update-{os.getpid()}.ps1"
         def quote(value):
             return "'" + str(value).replace("'", "''") + "'"
         backup = target.with_name(target.name + ".previous")
         ready = target.with_name(target.name + ".ready")
-        script.write_text(
-            f"$target = {quote(target)}\n"
-            f"$stage = {quote(stage)}\n"
-            f"$backup = {quote(backup)}\n"
-            f"$marker = {quote(ready)}\n"
-            f"$parentId = {os.getpid()}\n"
-            "try { Wait-Process -Id $parentId -Timeout 60 -ErrorAction SilentlyContinue } catch {}\n"
-            "Start-Sleep -Milliseconds 700\n"
-            "try {\n"
-            "  if (Test-Path $backup) { Remove-Item -LiteralPath $backup -Force }\n"
-            "  Move-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop\n"
-            "  Move-Item -LiteralPath $stage -Destination $target -Force -ErrorAction Stop\n"
-            "  Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue\n"
-            "  $env:YMIR_READY_MARKER = $marker\n"
-            "  $child = Start-Process -FilePath $target -PassThru -ErrorAction Stop\n"
-            "  $success = $false\n"
-            "  for ($i=0; $i -lt 35; $i++) {\n"
-            "    Start-Sleep -Seconds 1\n"
-            "    $child.Refresh()\n"
-            "    if ((Test-Path $marker) -and -not $child.HasExited) { $success = $true; break }\n"
-            "    if ($child.HasExited) { break }\n"
-            "  }\n"
-            "  if (-not $success) { throw 'A nova versão não iniciou corretamente.' }\n"
-            "  Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue\n"
-            "  Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue\n"
-            "  exit 0\n"
-            "} catch {\n"
-            "  try { if ($child -and -not $child.HasExited) { Stop-Process -Id $child.Id -Force } } catch {}\n"
-            "  Start-Sleep -Milliseconds 500\n"
-            "  if (Test-Path $backup) {\n"
-            "    Copy-Item -LiteralPath $backup -Destination $target -Force -ErrorAction SilentlyContinue\n"
-            "    Remove-Item -LiteralPath $env:YMIR_READY_MARKER -Force -ErrorAction SilentlyContinue\n"
-            "    $env:YMIR_READY_MARKER = ''\n"
-            "    Start-Process -FilePath $target -ErrorAction SilentlyContinue\n"
-            "  }\n"
-            "  Add-Type -AssemblyName System.Windows.Forms\n"
-            "  [System.Windows.Forms.MessageBox]::Show('A atualização falhou e a versão anterior foi restaurada.','Ymir Boss Timer')\n"
-            "}\n",
-            encoding="utf-8")
+        logfile = DATA_DIR / "update.log"
+        expected = str(self.latest_release["version"]).removeprefix("v")
+        ps = r'''
+$ErrorActionPreference = "Stop"
+$target = __TARGET__
+$stage = __STAGE__
+$backup = __BACKUP__
+$marker = __MARKER__
+$logfile = __LOGFILE__
+$expected = __EXPECTED__
+$parentId = __PARENT_ID__
+$child = $null
+$swapped = $false
+function Write-UpdateLog([string]$message) {
+  try {
+    Add-Content -LiteralPath $logfile -Encoding UTF8 -Value (
+      (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + " | " + $message
+    )
+  } catch {}
+}
+try {
+  Write-UpdateLog "Iniciando atualização para $expected"
+  try { Wait-Process -Id $parentId -Timeout 90 -ErrorAction SilentlyContinue } catch {}
+  Start-Sleep -Milliseconds 900
+  if (-not (Test-Path -LiteralPath $stage)) { throw "Executável baixado não encontrado." }
+  if (-not (Test-Path -LiteralPath $target)) { throw "Executável original não encontrado." }
+  # O backup é copiado primeiro e permanece intacto até a inicialização ter sucesso.
+  Copy-Item -LiteralPath $target -Destination $backup -Force -ErrorAction Stop
+  Move-Item -LiteralPath $stage -Destination $target -Force -ErrorAction Stop
+  $swapped = $true
+  Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+  $env:YMIR_READY_MARKER = $marker
+  $child = Start-Process -FilePath $target -PassThru -ErrorAction Stop
+  Write-UpdateLog "Executável iniciado. Aguardando confirmação da interface."
+  $readyOk = $false
+  # O PyInstaller --onefile pode iniciar um processo secundário: não confiar
+  # no estado do PID retornado por Start-Process como prova de falha.
+  for ($i = 0; $i -lt 90; $i++) {
+    Start-Sleep -Seconds 1
+    if (Test-Path -LiteralPath $marker) {
+      try {
+        $written = (Get-Content -LiteralPath $marker -Raw -Encoding ASCII).Trim()
+        if ($written -eq $expected) {
+          $readyOk = $true
+          break
+        }
+      } catch {}
+    }
+  }
+  if (-not $readyOk) {
+    throw "O aplicativo não confirmou a versão $expected após 90 segundos."
+  }
+  Write-UpdateLog "Atualização confirmada: versão $expected iniciou normalmente."
+  Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
+  exit 0
+} catch {
+  $reason = $_.Exception.Message
+  Write-UpdateLog "Falha: $reason"
+  Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
+  $env:YMIR_READY_MARKER = ""
+  $restored = $false
+  if ($swapped -and (Test-Path -LiteralPath $backup)) {
+    # Encerra os processos iniciados do EXE novo para permitir substituição.
+    try {
+      Get-CimInstance Win32_Process -Filter "Name='YmirBossTimer.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.ExecutablePath -eq $target } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    } catch {}
+    try { if ($child) { Stop-Process -Id $child.Id -Force -ErrorAction SilentlyContinue } } catch {}
+    Start-Sleep -Seconds 2
+    for ($retry = 0; $retry -lt 10; $retry++) {
+      try {
+        Copy-Item -LiteralPath $backup -Destination $target -Force -ErrorAction Stop
+        if ((Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash -eq
+            (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash) {
+          $restored = $true
+          break
+        }
+      } catch {
+        Start-Sleep -Seconds 2
+      }
+    }
+  } elseif (-not $swapped -and (Test-Path -LiteralPath $target)) {
+    $restored = $true  # A atualização falhou antes de substituir o EXE.
+  }
+  if ($restored) {
+    Write-UpdateLog "Executável antigo confirmado/restaurado."
+    try { Start-Process -FilePath $target -ErrorAction Stop } catch {
+      Write-UpdateLog "Não foi possível reabrir a versão anterior: $($_.Exception.Message)"
+    }
+  } else {
+    Write-UpdateLog "Não foi possível confirmar a restauração. Backup em: $backup"
+    if (Test-Path -LiteralPath $backup) {
+      try { Start-Process -FilePath $backup -ErrorAction Stop } catch {}
+    }
+  }
+  try {
+    Add-Type -AssemblyName System.Windows.Forms
+    if ($restored) {
+      [System.Windows.Forms.MessageBox]::Show(
+        "A nova versão não iniciou corretamente. A anterior foi restaurada. Detalhes em: $logfile",
+        "Ymir Boss Timer"
+      ) | Out-Null
+    } else {
+      [System.Windows.Forms.MessageBox]::Show(
+        "A atualização falhou. Consulte o log: $logfile e o backup: $backup",
+        "Ymir Boss Timer"
+      ) | Out-Null
+    }
+  } catch {}
+}
+'''
+        ps = (ps.replace("__TARGET__", quote(target))
+                .replace("__STAGE__", quote(stage))
+                .replace("__BACKUP__", quote(backup))
+                .replace("__MARKER__", quote(ready))
+                .replace("__LOGFILE__", quote(logfile))
+                .replace("__EXPECTED__", quote(expected))
+                .replace("__PARENT_ID__", str(os.getpid())))
+        # utf-8-sig evita acentos corrompidos no Windows PowerShell 5.1.
+        script.write_text(ps, encoding="utf-8-sig")
         try:
             subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), close_fds=True)
