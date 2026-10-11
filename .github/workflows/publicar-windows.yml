@@ -33,10 +33,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $source = Get-Content "ymir_boss_timer.py" -Raw -Encoding utf8
-          if ($source -notmatch 'APP_VERSION\s*=\s*"(\d+\.\d+\.\d+)"') {
+          if ($source -match 'APP_VERSION\s*=\s*"(\d+\.\d+\.\d+)"') {
+            $version = $Matches[1]
+          } else {
             throw "APP_VERSION X.Y.Z não encontrado no código."
           }
-          $version = $Matches[1]
           "version=$version" >> $env:GITHUB_OUTPUT
           $tag = "v$version"
           gh release view "$tag" --repo "$env:GITHUB_REPOSITORY" *> $null
