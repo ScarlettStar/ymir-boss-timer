@@ -39,6 +39,12 @@ jobs:
             throw "APP_VERSION no código ($($Matches[1])) não corresponde à versão solicitada ($env:RELEASE_VERSION)."
           }
 
+      - name: Verificar sintaxe do aplicativo
+        run: python -m py_compile ymir_boss_timer.py
+
+      - name: Testar os canais e a migração
+        run: python -m unittest discover -s tests -v
+
       - name: Instalar PyInstaller
         run: python -m pip install --upgrade pip pyinstaller
 
