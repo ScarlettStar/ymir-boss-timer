@@ -1,21 +1,24 @@
 name: Publicar aplicativo Windows
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "ymir_boss_timer.py"
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Versão do aplicativo (ex.: 1.8.0)"
-        required: true
-        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: ymir-publicar-main
+  cancel-in-progress: false
 
 jobs:
   publicar:
     runs-on: windows-latest
     steps:
-      - name: Baixar código do repositório
+      - name: Baixar código
         uses: actions/checkout@v4
 
       - name: Configurar Python
@@ -23,49 +26,57 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Conferir a versão
+      - name: Descobrir versão e conferir Releases existentes
+        id: release
         shell: pwsh
         env:
-          RELEASE_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') {
-            throw "Use o formato X.Y.Z (exemplo: 1.8.0)."
+          $source = Get-Content "ymir_boss_timer.py" -Raw -Encoding utf8
+          if ($source -notmatch 'APP_VERSION\s*=\s*"(\d+\.\d+\.\d+)"') {
+            throw "APP_VERSION X.Y.Z não encontrado no código."
           }
-          $source = Get-Content -Path "ymir_boss_timer.py" -Raw -Encoding utf8
-          if ($source -notmatch 'APP_VERSION\s*=\s*"([^"]+)"') {
-            throw "Não foi possível identificar APP_VERSION em ymir_boss_timer.py."
-          }
-          if ($Matches[1] -ne $env:RELEASE_VERSION) {
-            throw "APP_VERSION no código ($($Matches[1])) não corresponde à versão solicitada ($env:RELEASE_VERSION)."
+          $version = $Matches[1]
+          "version=$version" >> $env:GITHUB_OUTPUT
+          $tag = "v$version"
+          gh release view "$tag" --repo "$env:GITHUB_REPOSITORY" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            "exists=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Release $tag já existe. Não republicar esta versão."
+          } else {
+            "exists=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Nova versão: $tag"
           }
 
-      - name: Verificar sintaxe do aplicativo
+      - name: Conferir sintaxe
+        if: steps.release.outputs.exists == 'false'
         run: python -m py_compile ymir_boss_timer.py
 
-      - name: Testar os canais e a migração
+      - name: Executar testes
+        if: steps.release.outputs.exists == 'false'
         run: python -m unittest discover -s tests -v
 
-      - name: Instalar PyInstaller
-        run: python -m pip install --upgrade pip pyinstaller
+      - name: Instalar dependências do Windows
+        if: steps.release.outputs.exists == 'false'
+        run: python -m pip install --upgrade pip pyinstaller pystray Pillow winotify
 
-      - name: Gerar executável
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name YmirBossTimer ymir_boss_timer.py
+      - name: Compilar executável
+        if: steps.release.outputs.exists == 'false'
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name YmirBossTimer --collect-all winotify ymir_boss_timer.py
 
-      - name: Criar checksum SHA-256
+      - name: Gerar checksum SHA-256
+        if: steps.release.outputs.exists == 'false'
         shell: pwsh
         run: |
           $hash = (Get-FileHash "dist/YmirBossTimer.exe" -Algorithm SHA256).Hash.ToLower()
           [System.IO.File]::WriteAllText("$PWD/dist/YmirBossTimer.exe.sha256", $hash, [System.Text.Encoding]::ASCII)
 
-      - name: Publicar GitHub Release
+      - name: Publicar Release no GitHub
+        if: steps.release.outputs.exists == 'false'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: |
           $tag = "v$env:RELEASE_VERSION"
-          gh release view "$tag" 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            throw "O Release $tag já existe. Para outra publicação, incremente a versão."
-          }
-          gh release create "$tag" "dist/YmirBossTimer.exe" "dist/YmirBossTimer.exe.sha256" --target "$env:GITHUB_SHA" --title "Ymir Boss Timer $tag" --notes "Versão Windows do Ymir Boss Timer. Executável com verificação de integridade SHA-256."
+          gh release create "$tag" "dist/YmirBossTimer.exe" "dist/YmirBossTimer.exe.sha256" --target "$env:GITHUB_SHA" --title "Ymir Boss Timer $tag" --notes "Aplicativo Windows. Release gerado automaticamente a partir do código testado. SHA-256 incluído."
