@@ -1,5 +1,7 @@
 import json
 import hashlib
+import shutil
+import queue
 import re
 import subprocess
 import threading
@@ -22,10 +24,53 @@ NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
 MYRKHEIMR = "Bosses Myrkheimr"
 CHANNELS = ("CHN 1", "CHN 2")
+FOLKVANGR = "Bosses Fólkvangr"
+FLOORS = ("P1", "P2", "P3", "P4 UNIVERSAL")
 
 
 def channel_group_key(channel):
     return f"{MYRKHEIMR} • {channel}"
+
+
+def floor_group_key(floor):
+    return f"{FOLKVANGR} • {floor}"
+
+
+def clone_for_floor(boss, floor):
+    """Cópia independente do mesmo boss em outro piso, sem inventar kill."""
+    return {**boss, "id": uuid.uuid4().hex, "floor": floor,
+            "end": 0, "last_kill": 0, "warned_for": 0, "finished_for": 0}
+
+
+def boss_location(boss):
+    category = boss.get("category", CATEGORIES[0])
+    if category == MYRKHEIMR:
+        return f"Myrkheimr • {boss.get('channel') or CHANNELS[0]}"
+    if category == FOLKVANGR:
+        return f"Fólkvangr • {boss.get('floor') or FLOORS[0]}"
+    return "Universais"
+
+
+def backup_data():
+    """Backups locais independentes do EXE; nunca alteram os arquivos originais."""
+    files = (DATA_FILE, HISTORY_FILE, UPDATE_SETTINGS)
+    if not any(p.exists() for p in files):
+        return None
+    backup_root = DATA_DIR / "backups"
+    backup_root.mkdir(parents=True, exist_ok=True)
+    dest = backup_root / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    dest.mkdir()
+    try:
+        for path in files:
+            if path.is_file():
+                shutil.copy2(path, dest / path.name)
+    except OSError:
+        shutil.rmtree(dest, ignore_errors=True)
+        raise
+    # Conservar os 12 backups mais recentes.
+    for old in sorted([p for p in backup_root.iterdir() if p.is_dir()], reverse=True)[12:]:
+        shutil.rmtree(old, ignore_errors=True)
+    return dest
 
 
 def clone_for_channel(boss, channel):
@@ -35,9 +80,7 @@ def clone_for_channel(boss, channel):
 
 
 def boss_alert_label(boss):
-    if boss.get("category") == MYRKHEIMR:
-        return f"{boss['name']} • Myrkheimr {boss.get('channel', CHANNELS[0])}"
-    return boss["name"]
+    return f"{boss['name']} • {boss_location(boss)}"
 DATA_DIR = Path(os.environ.get("APPDATA", str(Path.home()))) / "YmirBossTimer"
 DATA_FILE = DATA_DIR / "bosses.json"
 HISTORY_FILE = DATA_DIR / "history.json"
@@ -69,6 +112,12 @@ class BossTimerApp(tk.Tk):
         self.minsize(620, 450)
         self.configure(bg=BG)
         self._channel_migrated = False
+        self._floor_migrated = False
+        try:
+            backup_data()  # Antes de qualquer migração ou gravação de dados.
+        except OSError:
+            pass
+        self.last_backup_at = time.time()
         self.bosses = self.load()
         self.history = self.load_history()
         self.active_tab = "timers"
@@ -81,13 +130,14 @@ class BossTimerApp(tk.Tk):
         self.category_headers = []
         self.collapsed = {category: False for category in CATEGORIES}
         self.collapsed.update({channel_group_key(ch): False for ch in CHANNELS})
+        self.collapsed.update({floor_group_key(f): False for f in FLOORS})
         self.category_var = tk.StringVar(value=CATEGORIES[0])
         self.update_busy = False
         self.latest_release = None
         self.update_repo = self.read_update_repo()
         self.build_ui()
-        if self._channel_migrated:
-            self.save()  # Registra a migração e evita recriar CHN 2 em outras inicializações.
+        if self._channel_migrated or self._floor_migrated:
+            self.save()  # Evita refazer migrações em inicializações posteriores.
         self.after(3000, lambda: self.check_updates(silent=True))
         self.render()
         self.render_history()
@@ -288,18 +338,23 @@ class BossTimerApp(tk.Tk):
                         continue
                     category = x.get("category") if x.get("category") in CATEGORIES else CATEGORIES[0]
                     channel = x.get("channel") if x.get("channel") in CHANNELS else CHANNELS[0]
+                    floor = x.get("floor") if x.get("floor") in FLOORS else FLOORS[0]
                     boss = {"id": str(x.get("id", uuid.uuid4().hex)), "name": name,
-                            "minutes": minutes, "category": category, "channel": channel if category == MYRKHEIMR else "",
+                            "minutes": minutes, "category": category,
+                            "channel": channel if category == MYRKHEIMR else "",
+                            "floor": floor if category == FOLKVANGR else "",
                             "end": float(x.get("end", 0)),
                             "warned_for": float(x.get("warned_for", 0)),
                             "finished_for": float(x.get("finished_for", 0)),
                             "last_kill": float(x.get("last_kill", 0))}
                     clean.append(boss)
-                    # Migração v1.8: mantém o ID e o timer originais no CHN 1;
-                    # gera só uma cópia INATIVA no CHN 2 para não inventar horário.
                     if category == MYRKHEIMR and x.get("channel") not in CHANNELS:
                         clean.append(clone_for_channel(boss, CHANNELS[1]))
                         self._channel_migrated = True
+                    if category == FOLKVANGR and x.get("floor") not in FLOORS:
+                        for extra_floor in FLOORS[1:]:
+                            clean.append(clone_for_floor(boss, extra_floor))
+                        self._floor_migrated = True
                 return clean
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             pass
@@ -358,7 +413,7 @@ class BossTimerApp(tk.Tk):
             name.pack(fill="x", padx=12, pady=(9, 2))
             tk.Label(name, text=r["name"], fg=TEXT, bg=row.cget("bg"),
                      font=("Segoe UI", 11, "bold"), anchor="w").pack(side="left")
-            tk.Label(name, text=(f"{r['category']} • {r.get('channel', CHANNELS[0])}" if r["category"] == MYRKHEIMR else r["category"]), fg=PURPLE, bg=row.cget("bg"),
+            tk.Label(name, text=(f"{r['category']} • {r.get('channel', CHANNELS[0])}" if r["category"] == MYRKHEIMR else (f"{r['category']} • {r.get('floor', FLOORS[0])}" if r["category"] == FOLKVANGR else r["category"])), fg=PURPLE, bg=row.cget("bg"),
                      font=("Segoe UI", 9), anchor="e").pack(side="right")
             details = tk.Frame(row, bg=row.cget("bg"))
             details.pack(fill="x", padx=12, pady=(1, 10))
@@ -582,7 +637,7 @@ class BossTimerApp(tk.Tk):
         suffix = f"  • {soon} em até 5 min" if soon else ""
         if ready:
             suffix += f"  • {ready} disponível(is)"
-        label = category.split(" • ")[-1] if category.startswith(MYRKHEIMR + " • ") else category.upper()
+        label = category.split(" • ")[-1] if " • " in category else category.upper()
         return f"{prefix}  {label} ({len(group)}){suffix}"
 
     def group_for_header(self, category):
@@ -590,27 +645,33 @@ class BossTimerApp(tk.Tk):
             channel = category.split(" • ")[-1]
             return [b for b in self.bosses
                     if b.get("category") == MYRKHEIMR and b.get("channel") == channel]
+        if category.startswith(FOLKVANGR + " • "):
+            floor = category.split(" • ", 1)[-1]
+            return [b for b in self.bosses
+                    if b.get("category") == FOLKVANGR and b.get("floor") == floor]
         return [b for b in self.bosses if b.get("category", CATEGORIES[0]) == category]
 
     def render_sections(self, parent, compact=False):
-        """Monta Universais, Myrkheimr (CHN 1 e CHN 2) e Fólkvangr."""
         make_card = self.make_compact_card if compact else self.make_full_card
         for category in CATEGORIES:
             group = self.group_for_header(category)
             self.category_header(parent, category, group, compact=compact)
             if self.collapsed[category]:
                 continue
-            if category == MYRKHEIMR:
-                for channel in CHANNELS:
-                    key = channel_group_key(channel)
-                    group_channel = self.group_for_header(key)
-                    self.category_header(parent, key, group_channel, compact=compact, nested=True)
+            if category in (MYRKHEIMR, FOLKVANGR):
+                subgroups = (
+                    [channel_group_key(c) for c in CHANNELS] if category == MYRKHEIMR
+                    else [floor_group_key(f) for f in FLOORS]
+                )
+                for key in subgroups:
+                    subgroup = self.group_for_header(key)
+                    self.category_header(parent, key, subgroup, compact=compact, nested=True)
                     if self.collapsed[key]:
                         continue
-                    if not group_channel and not compact:
-                        tk.Label(parent, text="Nenhum boss neste canal", bg=BG, fg=MUTED,
+                    if not subgroup and not compact:
+                        tk.Label(parent, text="Nenhum boss neste local", bg=BG, fg=MUTED,
                                  anchor="w", font=("Segoe UI", 9)).pack(fill="x", padx=26, pady=(0, 8))
-                    for boss in group_channel:
+                    for boss in subgroup:
                         make_card(boss, nested=True)
             else:
                 if not group and not compact:
@@ -626,7 +687,7 @@ class BossTimerApp(tk.Tk):
                 button.config(text=self.category_title(category, group),
                               fg=WARNING if any(0 < b.get("end", 0) - time.time() <= NEAR_RESPAWN_SECONDS
                                                 for b in group)
-                              else (PURPLE if category.startswith(MYRKHEIMR + " • ") else ACCENT))
+                              else (PURPLE if " • " in category else ACCENT))
 
     def render_compact(self):
         if self.compact is None or not self.compact.winfo_exists():
@@ -688,12 +749,16 @@ class BossTimerApp(tk.Tk):
             return
         category = self.category_var.get()
         boss = {"id": uuid.uuid4().hex, "name": name, "minutes": minutes,
-                "category": category, "channel": CHANNELS[0] if category == MYRKHEIMR else "",
+                "category": category,
+                "channel": CHANNELS[0] if category == MYRKHEIMR else "",
+                "floor": FLOORS[0] if category == FOLKVANGR else "",
                 "end": 0, "warned_for": 0, "finished_for": 0, "last_kill": 0}
         self.bosses.append(boss)
         if category == MYRKHEIMR:
-            # Um cadastro em Myrkheimr gera os dois canais; os timers são separados.
             self.bosses.append(clone_for_channel(boss, CHANNELS[1]))
+        elif category == FOLKVANGR:
+            for floor in FLOORS[1:]:
+                self.bosses.append(clone_for_floor(boss, floor))
         self.name_entry.delete(0, "end")
         self.minutes_entry.delete(0, "end")
         self.save()
@@ -705,6 +770,7 @@ class BossTimerApp(tk.Tk):
         boss["last_kill"] = killed_at
         self.history.append({"name": boss["name"], "category": boss.get("category", CATEGORIES[0]),
                              "channel": boss.get("channel", "") if boss.get("category") == MYRKHEIMR else "",
+                             "floor": boss.get("floor", "") if boss.get("category") == FOLKVANGR else "",
                              "killed_at": killed_at, "respawn_at": boss["end"],
                              "boss_id": boss["id"]})
         self.history = self.history[-MAX_HISTORY:]
@@ -790,11 +856,13 @@ class BossTimerApp(tk.Tk):
         if category not in CATEGORIES or boss.get("category") == category:
             return
         boss["category"] = category
+        boss["channel"] = CHANNELS[0] if category == MYRKHEIMR else ""
+        boss["floor"] = FLOORS[0] if category == FOLKVANGR else ""
         if category == MYRKHEIMR:
-            boss["channel"] = CHANNELS[0]
             self.bosses.append(clone_for_channel(boss, CHANNELS[1]))
-        else:
-            boss["channel"] = ""
+        elif category == FOLKVANGR:
+            for floor in FLOORS[1:]:
+                self.bosses.append(clone_for_floor(boss, floor))
         self.save()
         self.render()
 
