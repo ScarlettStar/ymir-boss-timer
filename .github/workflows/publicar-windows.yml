@@ -1,0 +1,65 @@
+name: Publicar aplicativo Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versão do aplicativo (ex.: 1.8.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publicar:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Conferir a versão
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Use o formato X.Y.Z (exemplo: 1.8.0)."
+          }
+          $source = Get-Content -Path "ymir_boss_timer.py" -Raw -Encoding utf8
+          if ($source -notmatch 'APP_VERSION\s*=\s*"([^"]+)"') {
+            throw "Não foi possível identificar APP_VERSION em ymir_boss_timer.py."
+          }
+          if ($Matches[1] -ne $env:RELEASE_VERSION) {
+            throw "APP_VERSION no código ($($Matches[1])) não corresponde à versão solicitada ($env:RELEASE_VERSION)."
+          }
+
+      - name: Instalar PyInstaller
+        run: python -m pip install --upgrade pip pyinstaller
+
+      - name: Gerar executável
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name YmirBossTimer ymir_boss_timer.py
+
+      - name: Criar checksum SHA-256
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "dist/YmirBossTimer.exe" -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$PWD/dist/YmirBossTimer.exe.sha256", $hash, [System.Text.Encoding]::ASCII)
+
+      - name: Publicar GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          $tag = "v$env:RELEASE_VERSION"
+          gh release view "$tag" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            throw "O Release $tag já existe. Para outra publicação, incremente a versão."
+          }
+          gh release create "$tag" "dist/YmirBossTimer.exe" "dist/YmirBossTimer.exe.sha256" --target "$env:GITHUB_SHA" --title "Ymir Boss Timer $tag" --notes "Versão Windows do Ymir Boss Timer. Executável com verificação de integridade SHA-256."
