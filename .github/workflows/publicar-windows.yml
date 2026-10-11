@@ -40,8 +40,9 @@ jobs:
           }
           "version=$version" >> $env:GITHUB_OUTPUT
           $tag = "v$version"
-          gh release view "$tag" --repo "$env:GITHUB_REPOSITORY" *> $null
-          if ($LASTEXITCODE -eq 0) {
+          # release list retorna exit 0 inclusive quando ainda não existe Release.
+          $published = @(gh release list --repo "$env:GITHUB_REPOSITORY" --json tagName --limit 100 | ConvertFrom-Json)
+          if ($published.tagName -contains $tag) {
             "exists=true" >> $env:GITHUB_OUTPUT
             Write-Host "Release $tag já existe. Não republicar esta versão."
           } else {
