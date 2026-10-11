@@ -26,3 +26,10 @@ Para futuras versões, altere o código e `APP_VERSION` (por exemplo, `1.8.0`) a
 Os cadastros e históricos são armazenados localmente em `%APPDATA%\YmirBossTimer` e não precisam ser enviados ao GitHub. **Não publique `bosses.json`, `history.json` ou outros dados pessoais**.
 
 O mecanismo de atualização verifica SHA-256 e exige confirmação. O SHA-256 detecta corrupção de download, mas **não autentica** o autor do executável: publique somente código e Releases confiáveis. O sistema ainda precisa ser testado em Windows antes de ser considerado validado.
+
+## v1.9.0 — Myrkheimr por canal
+- Myrkheimr agora possui dois subgrupos recolhíveis: **CHN 1** e **CHN 2**.
+- Ao abrir a v1.9 pela primeira vez, bosses de Myrkheimr cadastrados nas versões anteriores são preservados no **CHN 1** (incluindo timers e IDs) e duplicados **sem contagem ativa** para o CHN 2.
+- Novos bosses cadastrados em Myrkheimr aparecem automaticamente nos dois canais, com cronômetros independentes.
+- O histórico e os avisos sonoros/visuais identificam CHN 1 ou CHN 2. Alertas continuam ativos mesmo com os subgrupos recolhidos.
+- Executar o workflow **Publicar aplicativo Windows** com a versão `1.9.0`. O workflow executa testes de migração/alertas antes de gerar o executável e o Release.
