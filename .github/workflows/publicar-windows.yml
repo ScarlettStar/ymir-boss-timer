@@ -66,6 +66,41 @@ jobs:
         if: steps.release.outputs.exists == 'false'
         run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name YmirBossTimer --collect-all winotify ymir_boss_timer.py
 
+      - name: Testar inicialização do executável Windows
+        if: steps.release.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          $marker = Join-Path $env:RUNNER_TEMP "ymir-boot-verified.txt"
+          Remove-Item -LiteralPath $marker -ErrorAction SilentlyContinue
+          $env:YMIR_READY_MARKER = $marker
+          $process = $null
+          try {
+            $path = (Resolve-Path "dist/YmirBossTimer.exe").Path
+            $process = Start-Process -FilePath $path -PassThru -ErrorAction Stop
+            $verified = $false
+            for ($i=0; $i -lt 75; $i++) {
+              Start-Sleep -Seconds 1
+              if (Test-Path $marker) {
+                $reported = (Get-Content -LiteralPath $marker -Raw -Encoding ASCII).Trim()
+                if ($reported -eq $env:RELEASE_VERSION) {
+                  $verified = $true
+                  break
+                }
+              }
+            }
+            if (-not $verified) {
+              throw "O EXE Windows não sinalizou abertura da interface após 75 segundos."
+            }
+            Write-Host "Interface Python/Tk iniciou corretamente na versão $env:RELEASE_VERSION."
+          } finally {
+            $env:YMIR_READY_MARKER = ""
+            if ($process) {
+              taskkill.exe /PID $process.Id /T /F 2>$null
+            }
+          }
+
       - name: Gerar checksum SHA-256
         if: steps.release.outputs.exists == 'false'
         shell: pwsh
