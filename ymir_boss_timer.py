@@ -20,7 +20,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
