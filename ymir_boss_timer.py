@@ -12,6 +12,7 @@ import os
 import sys
 import time
 import uuid
+from ymir_features import YmirVisualMixin, location as boss_location
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
@@ -104,7 +105,7 @@ def format_seconds(seconds):
     return f"{h:02d}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
 
 
-class BossTimerApp(tk.Tk):
+class BossTimerApp(YmirVisualMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
@@ -127,6 +128,12 @@ class BossTimerApp(tk.Tk):
         self.warning_minutes = tk.IntVar(value=1)
         self.compact = None
         self.compact_labels = {}
+        self.overlay = None
+        self.overlay_rows = []
+        self.tray_icon = None
+        self.tray_commands = queue.SimpleQueue()
+        self.last_upcoming_refresh = 0
+        self.app_version = APP_VERSION
         self.category_headers = []
         self.collapsed = {category: False for category in CATEGORIES}
         self.collapsed.update({channel_group_key(ch): False for ch in CHANNELS})
@@ -136,6 +143,8 @@ class BossTimerApp(tk.Tk):
         self.latest_release = None
         self.update_repo = self.read_update_repo()
         self.build_ui()
+        self.after(1400, self.init_tray)
+        self.after(650, self.signal_update_ready)
         if self._channel_migrated or self._floor_migrated:
             self.save()  # Evita refazer migrações em inicializações posteriores.
         self.after(3000, lambda: self.check_updates(silent=True))
@@ -319,7 +328,7 @@ class BossTimerApp(tk.Tk):
         try:
             subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), close_fds=True)
-            self.close()
+            self.quit_app()
         except OSError as exc:
             self._update_failed(str(exc))
 
@@ -383,17 +392,19 @@ class BossTimerApp(tk.Tk):
 
     def switch_tab(self, tab):
         self.active_tab = tab
+        for view in (self.timer_view, self.history_view, self.upcoming_view):
+            view.pack_forget()
+        selected = {"timers": self.timer_view, "history": self.history_view,
+                    "upcoming": self.upcoming_view}[tab]
+        selected.pack(fill="both", expand=True)
         if tab == "history":
-            self.timer_view.pack_forget()
-            self.history_view.pack(fill="both", expand=True)
             self.render_history()
-        else:
-            self.history_view.pack_forget()
-            self.timer_view.pack(fill="both", expand=True)
-        self.tab_timers.config(bg=ACCENT if tab == "timers" else PANEL,
-                               fg=BG if tab == "timers" else TEXT)
-        self.tab_history.config(bg=ACCENT if tab == "history" else PANEL,
-                                fg=BG if tab == "history" else TEXT)
+        elif tab == "upcoming":
+            self.render_upcoming()
+        for key, button in (("timers", self.tab_timers), ("history", self.tab_history),
+                            ("upcoming", self.tab_upcoming)):
+            button.config(bg=ACCENT if key == tab else PANEL,
+                          fg=BG if key == tab else TEXT)
 
     def render_history(self):
         if not hasattr(self, "history_rows"):
@@ -466,15 +477,27 @@ class BossTimerApp(tk.Tk):
                                      bg=PANEL, fg=TEXT, relief="flat", padx=15, pady=10,
                                      font=("Segoe UI", 10, "bold"), cursor="hand2")
         self.tab_history.pack(side="left")
+        self.tab_upcoming = tk.Button(nav, text="  ◷  PRÓXIMOS  ", command=lambda: self.switch_tab("upcoming"),
+                                      bg=PANEL, fg=TEXT, relief="flat", padx=12, pady=10,
+                                      font=("Segoe UI", 10, "bold"), cursor="hand2")
+        self.tab_upcoming.pack(side="left", padx=(9, 0))
         tk.Button(nav, text="⬇ ATUALIZAÇÕES", command=self.updates_dialog, bg=PANEL, fg=ACCENT,
                   relief="flat", padx=15, pady=10, font=("Segoe UI", 10, "bold"),
                   cursor="hand2").pack(side="right")
         self.timer_view = tk.Frame(self, bg=BG)
         self.timer_view.pack(fill="both", expand=True)
         self.history_view = tk.Frame(self, bg=BG)
+        self.upcoming_view = tk.Frame(self, bg=BG)
         self.build_history_ui()
+        self.build_upcoming_ui()
         bar = tk.Frame(self.timer_view, bg=PANEL)
         bar.pack(fill="x", padx=16, pady=8, ipady=7)
+        tk.Button(bar, text="◈ Overlay gamer", command=self.toggle_overlay, bg=PURPLE,
+                  fg=BG, relief="flat", font=("Segoe UI", 9, "bold"),
+                  cursor="hand2").pack(side="right", padx=(0, 7))
+        tk.Button(bar, text="⊟ Bandeja", command=self.hide_to_tray, bg=PANEL,
+                  fg=TEXT, relief="flat", font=("Segoe UI", 9),
+                  cursor="hand2").pack(side="right", padx=(0, 7))
         tk.Button(bar, text="◱ Modo compacto", command=self.open_compact, bg=ACCENT,
                   fg=BG, relief="flat", font=("Segoe UI", 9, "bold"),
                   cursor="hand2").pack(side="right", padx=8)
@@ -537,6 +560,8 @@ class BossTimerApp(tk.Tk):
         self.history_count = tk.Label(toolbar, text="", bg=BG, fg=ACCENT,
                                       font=("Segoe UI", 10, "bold"))
         self.history_count.pack(side="left")
+        tk.Button(toolbar, text="Abrir backups", command=self.open_backup_folder,
+                  bg=PANEL, fg=ACCENT, relief="flat", padx=8).pack(side="right", padx=(0, 8))
         tk.Button(toolbar, text="Limpar histórico", command=self.clear_history,
                   bg=PANEL, fg=DANGER, relief="flat", padx=12, pady=7,
                   font=("Segoe UI", 9), cursor="hand2").pack(side="right")
@@ -940,13 +965,35 @@ class BossTimerApp(tk.Tk):
         self.refresh_category_headers()
         self.after(500, self.tick)
 
+    def open_backup_folder(self):
+        folder = DATA_DIR / "backups"
+        folder.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt":
+            os.startfile(str(folder))
+        else:
+            messagebox.showinfo("Backups", f"Seus backups estão em: {folder}")
+
     def close(self):
+        """O X minimiza para a bandeja; a opção Sair encerra de verdade."""
+        if self.tray_icon is not None:
+            self.hide_to_tray()
+        else:
+            self.quit_app()
+
+    def quit_app(self):
         self.save()
         self.save_history()
+        if self.tray_icon is not None:
+            try:
+                self.tray_icon.stop()
+            except Exception:
+                pass
+            self.tray_icon = None
+        if self.overlay is not None and self.overlay.winfo_exists():
+            self.overlay.destroy()
         if self.compact is not None and self.compact.winfo_exists():
             self.compact.destroy()
         self.destroy()
-
 
 if __name__ == "__main__":
     app = BossTimerApp()
