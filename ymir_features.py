@@ -30,7 +30,10 @@ def remaining_text(seconds):
 from ymir_command import CommandCenterMixin
 
 
-class YmirVisualMixin(CommandCenterMixin):
+from ymir_smart import SmartTimersMixin
+
+
+class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin):
     def build_dashboard(self):
         self.dashboard_frame = summary = tk.Frame(self.content, bg=BG)
         summary.pack(fill="x", padx=16, pady=(2, 4))
@@ -192,14 +195,14 @@ class YmirVisualMixin(CommandCenterMixin):
         if self.overlay is None or not self.overlay.winfo_exists():
             return
         now = time.time()
-        bosses = self.upcoming_bosses(now)
+        bosses = self.overlay_bosses(now)
         for index, (frame, name, timing) in enumerate(self.overlay_rows):
             if index >= len(bosses):
                 frame.pack_forget()
                 continue
             b = bosses[index]
             remain = b["end"] - now
-            name.config(text=f"{b['name'][:27]}\n{location(b)}")
+            name.config(text=f"{'★ ' if b.get('favorite') else ''}{b['name'][:27]}\n{location(b)}")
             timing.config(text="PRONTO" if remain <= 0 else remaining_text(remain),
                           fg=ACCENT if remain <= 0 else (WARNING if remain <= 60 else TEXT))
             frame.pack(fill="x", padx=8, pady=2)
