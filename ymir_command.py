@@ -37,9 +37,6 @@ class CommandCenterMixin:
         tk.Label(self.sidebar, text=f"v{version}\nAlertas em todas as regiões",
                  bg=SIDEBAR, fg=MUTED, justify="left",
                  font=("Segoe UI", 8)).pack(side="bottom", anchor="w", padx=14, pady=14)
-        tk.Label(self.sidebar, textvariable=self.update_status, bg=SIDEBAR, fg=MUTED,
-                 font=("Segoe UI", 8), wraplength=145, justify="left").pack(
-                     side="bottom", fill="x", padx=14, pady=(0, 8))
         GamerButton(self.sidebar, text="↓  Atualizações", command=self.updates_dialog,
                     bg=PANEL, fg=ACCENT, anchor="w", padx=10, pady=9,
                     font=("Segoe UI", 9)).pack(side="bottom", fill="x", padx=10)

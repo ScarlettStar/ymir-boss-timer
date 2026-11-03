@@ -205,7 +205,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                        activebackground=BG, activeforeground=TEXT,
                        command=lambda: self.save_update_repo(repo_entry.get()),
                        font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(0, 5))
-        status = tk.StringVar(value="Verificando o GitHub automaticamente a cada 30 minutos.")
+        status = self.update_status
         tk.Label(win, textvariable=status, bg=BG, fg=WARNING, wraplength=485,
                  justify="left", font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=5)
         buttons = tk.Frame(win, bg=BG)
