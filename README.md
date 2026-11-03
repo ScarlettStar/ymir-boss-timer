@@ -108,3 +108,10 @@ O processo de atualização solicita um ambiente novo ao PyInstaller antes de ab
 A versão antiga já instalada continua executando seu próprio atualizador. Se ela restaurar a anterior, feche o aplicativo pela bandeja e abra o executável baixado manualmente pelo Explorer. Não remova os dados em `%APPDATA%\\YmirBossTimer`. A correção passa a proteger futuras atualizações iniciadas pela versão 3.0.1.
 
 CI: além dos testes existentes, gera uma fixture onefile Windows e executa o atualizador real entre dois processos, verificando o log de confirmação. Nenhum Release é criado por esses testes.
+
+
+## Próxima interface — Central de combate
+
+Navegação lateral fixa com acesso ao radar, histórico, overlay, modo compacto e atualizações. O topo destaca o próximo respawn de todas as regiões, mesmo recolhidas. Cards mostram região/canal/piso, ciclo, última morte, progresso e ações separadas. O cadastro ganhou um painel próprio. Não há alteração no formato dos dados ou na lógica dos timers.
+
+Esta etapa depende da correção de reinício do PR #2. A CI Windows valida interface e reinício onefile e disponibiliza capturas com dados de teste em **Artifacts → interface-preview**. Nenhum Release é publicado automaticamente.

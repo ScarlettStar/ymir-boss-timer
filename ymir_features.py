@@ -27,13 +27,16 @@ def remaining_text(seconds):
     return f"{hours:02d}:{minutes:02d}:{sec:02d}" if hours else f"{minutes:02d}:{sec:02d}"
 
 
-class YmirVisualMixin:
+from ymir_command import CommandCenterMixin
+
+
+class YmirVisualMixin(CommandCenterMixin):
     def build_dashboard(self):
-        summary = tk.Frame(self, bg=BG)
+        summary = tk.Frame(self.content, bg=BG)
         summary.pack(fill="x", padx=16, pady=(2, 4))
         self.dashboard_labels = []
         for index, (title, color) in enumerate((
-            ("BOSSES CADASTRADOS", TEXT), ("TIMERS ATIVOS", PURPLE),
+            ("CADASTRADOS", TEXT), ("TIMERS ATIVOS", PURPLE),
             ("EM ATÉ 5 MIN", WARNING), ("DISPONÍVEIS", ACCENT),
         )):
             summary.columnconfigure(index, weight=1, uniform="summary")
@@ -41,7 +44,7 @@ class YmirVisualMixin:
                             highlightthickness=1)
             tile.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 8, 0))
             tk.Label(tile, text=title, bg=PANEL, fg=MUTED,
-                     font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=12, pady=(10, 0))
+                     font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=12, pady=(10, 0))
             value = tk.Label(tile, text="0", bg=PANEL, fg=color,
                              font=("Consolas", 24, "bold"))
             value.pack(anchor="w", padx=12, pady=(0, 8))
@@ -50,6 +53,21 @@ class YmirVisualMixin:
     def refresh_dashboard(self, now):
         for label, count in zip(self.dashboard_labels, dashboard_counts(self.bosses, now)):
             label.configure(text=str(count))
+
+        targets = self.upcoming_bosses(now)
+        if not targets:
+            self.target_name.configure(text="Nenhum respawn em andamento")
+            self.target_location.configure(text="Registre uma morte para iniciar a contagem")
+            self.target_timer.configure(text="--:--", fg=MUTED)
+            self.target_state.configure(text="AGUARDANDO REGISTRO", fg=MUTED)
+            return
+        boss = targets[0]
+        remain = boss["end"] - now
+        color = ACCENT if remain <= 0 else (WARNING if remain <= 300 else TEXT)
+        self.target_name.configure(text=boss["name"])
+        self.target_location.configure(text=location(boss))
+        self.target_timer.configure(text="00:00" if remain <= 0 else remaining_text(remain), fg=color)
+        self.target_state.configure(text="DISPONÍVEL" if remain <= 0 else "ATÉ O RESPAWN", fg=color)
 
     def upcoming_bosses(self, now=None):
         if now is None:
