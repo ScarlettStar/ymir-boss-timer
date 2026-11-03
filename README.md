@@ -45,7 +45,7 @@ O mecanismo de atualização verifica SHA-256 e exige confirmação. O SHA-256 d
 
 **Backups:** cópia local dos arquivos JSON ao iniciar e a cada seis horas, em \`%APPDATA%\YmirBossTimer\backups\`, com retenção das últimas 12 cópias. Abra essa pasta pelo botão "Abrir backups" na aba Histórico. Nenhum dado dos bosses vai para o GitHub.
 
-**Publicação manual (3.0):** alterações e merges não publicam Releases. Use Actions → Publicar aplicativo Windows → Run workflow quando decidir distribuir uma versão. O app verifica Releases ao iniciar e a cada 30 minutos; na versão 2.0, com atualização automática habilitada, instala uma versão pendente após dois minutos sem contagem regressiva ativa. **Uma atualização reinicia o programa**. O atualizador verifica SHA-256, conserva temporariamente o executável anterior e tenta recuperá-lo se o novo processo não inicializar. Não equivale a assinatura digital do executável.
+**Publicação (3.1):** novas versões na main são publicadas após os testes. Também é possível usar Actions → Publicar aplicativo Windows → Run workflow. Versões existentes não são republicadas. O app verifica Releases ao iniciar e a cada 30 minutos; na versão 2.0, com atualização automática habilitada, instala uma versão pendente após dois minutos sem contagem regressiva ativa. **Uma atualização reinicia o programa**. O atualizador verifica SHA-256, conserva temporariamente o executável anterior e tenta recuperá-lo se o novo processo não inicializar. Não equivale a assinatura digital do executável.
 
 **Primeira atualização de 1.9 para 2.0:** a v1.9 ainda usa o mecanismo manual, então faça essa transição pelo botão "Atualizações → Salvar e verificar → Instalar atualização". As seguintes poderão acontecer sem esse clique, enquanto o aplicativo estiver aberto e sem contagens ativas.
 
@@ -68,7 +68,7 @@ iniciado permanecem aguardando uma morte. O histórico mantém as mortes e
 corrige a previsão vinculada à última morte registrada, sem apagar entradas.
 Uma cópia de segurança dos dados é criada antes da alteração.
 
-**Publicação:** a partir da 3.0, o GitHub Actions publica apenas por execução manual.
+**Publicação:** na 3.1, alterações dos módulos na main publicam novas versões após os testes.
 O aplicativo v2.0 verifica as novas versões e instala a v2.1 quando estiver
 aberto e sem timers ativos por pelo menos dois minutos (se a opção de
 atualização automática estiver habilitada).
@@ -115,3 +115,15 @@ CI: além dos testes existentes, gera uma fixture onefile Windows e executa o at
 Navegação lateral fixa com acesso ao radar, histórico, overlay, modo compacto e atualizações. O topo destaca o próximo respawn de todas as regiões, mesmo recolhidas. Cards mostram região/canal/piso, ciclo, última morte, progresso e ações separadas. O cadastro ganhou um painel próprio. Não há alteração no formato dos dados ou na lógica dos timers.
 
 Esta etapa depende da correção de reinício do PR #2. A CI Windows valida interface e reinício onefile e disponibiliza capturas com dados de teste em **Artifacts → interface-preview**. Nenhum Release é publicado automaticamente.
+
+
+## Versão 3.1.0 — timers inteligentes e atualizações automáticas
+
+- Busca por nome/local sem diferenciar acentos ou maiúsculas. Botão **Filtros** combina região, canal/piso e status; **Só favoritos** e **Limpar** ficam na lista. Filtros não limitam alertas, resumo, modo compacto ou overlay. As seções abrem ao aplicar um filtro e os resultados acompanham mudanças de status.
+- Estrela em cada card salva favoritos independentes por canal/piso. Favoritos ficam primeiro dentro das seções e no overlay; o radar global mantém a ordem por horário.
+- **Morreu há…** aceita minutos inteiros de 0 a 10080. O respawn parte do horário informado. Histórico é ordenado por morte; mortes já expiradas não repetem avisos antigos.
+- Atualização automática: ativa por padrão em instalações novas e respeita a preferência salva. Com o app aberto, verifica ao iniciar e a cada 30 minutos; instala após dois minutos sem timers ativos. Se um timer começar durante o download, adia a instalação. Requer EXE Windows em pasta gravável.
+- Falhas de download aguardam 30 minutos antes de tentar novamente. Uma versão que sofreu rollback fica bloqueada para novas instalações automáticas; tentativa manual ou uma versão diferente permite retomar. Erros ficam em update.log.
+- Publicação automática no GitHub restaurada: alterações dos módulos na main publicam apenas versões ainda não lançadas, depois de testes e verificação da abertura do EXE. Branches e PRs não publicam.
+
+Para receber esta versão sem baixar pelo navegador: na 3.0.1, deixe marcada a opção automática em **Atualizações**, clique em **Salvar e verificar** para consultar imediatamente e mantenha o app aberto. A instalação espera os timers ativos terminarem. Cadastros, favoritos e histórico permanecem no mesmo diretório.

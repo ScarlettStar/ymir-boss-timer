@@ -16,13 +16,14 @@ import ctypes
 from ymir_features import YmirVisualMixin, location as boss_location
 from datetime import datetime
 from pathlib import Path
+from ymir_updates import can_auto_install
 import tkinter as tk
 from tkinter import ttk, messagebox
 from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.0.1"
+APP_VERSION = "3.1.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
@@ -138,6 +139,9 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.latest_release = None
         self.update_repo = self.read_update_repo()
         self.auto_update_enabled = tk.BooleanVar(value=self.read_auto_update())
+        self.update_retry_after = 0
+        self.update_status = tk.StringVar(value=("Atualizações automáticas ativadas"
+                                               if self.auto_update_enabled.get() else "Atualizações automáticas desativadas"))
         self.last_update_check = 0
         self.auto_update_idle_since = time.time()
         self.build_ui()
@@ -177,6 +181,8 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                                    encoding="utf-8")
         self.update_repo = repository or DEFAULT_UPDATE_REPO
         self.latest_release = None
+        self.update_status.set("Atualizações automáticas ativadas" if self.auto_update_enabled.get()
+                               else "Atualizações automáticas desativadas")
         return True
 
     def updates_dialog(self):
@@ -211,8 +217,8 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                   relief="flat", padx=12, pady=10, font=("Segoe UI", 10, "bold")).pack(side="left")
         GamerButton(buttons, text="Instalar atualização", command=lambda: self.install_update(status),
                   bg=PANEL, fg=TEXT, relief="flat", padx=12, pady=10).pack(side="left", padx=10)
-        tk.Label(win, text="A instalação exige um .exe gerado pelo GERAR_EXE.bat.",
-                 bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=18)
+        tk.Label(win, text="Instala após 2 minutos sem timers ativos. O app reinicia e preserva seus dados.",
+                 bg=BG, fg=MUTED, font=("Segoe UI", 9), wraplength=490, justify="left").pack(anchor="w", padx=18)
 
     @staticmethod
     def version_tuple(value):
@@ -265,6 +271,10 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
 
     def _update_found(self, info, silent, status_var):
         self.latest_release = info
+        self.update_status.set(f"Nova {info['version']} • aguarda timers terminarem" if self.auto_update_enabled.get()
+                               else f"Nova {info['version']} disponível")
+        if self.failed_update_version() == str(info["version"]).removeprefix("v"):
+            self.update_status.set("Atualização falhou; abra Atualizações para tentar novamente")
         text = f"Nova versão {info['version']} disponível."
         if status_var:
             try:
@@ -288,13 +298,17 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
             return
         if self.update_busy:
             return
-        if auto and any(b.get("end", 0) > time.time() for b in self.bosses):
-            return  # Nunca interromper respawns em andamento.
+        if auto and (not can_auto_install(self.bosses, time.time(), self.auto_update_idle_since)
+                     or time.time() < self.update_retry_after
+                     or self.failed_update_version() == str(info["version"]).removeprefix("v")):
+            return  # Revalidar ociosidade e não repetir versões que sofreram rollback.
         if not auto and not messagebox.askyesno(
             "Instalar atualização", f"Instalar {info['version']}? O aplicativo reiniciará e seus dados serão preservados."
         ):
             return
+        self._install_is_automatic = auto
         self.update_busy = True
+        self.update_status.set("Baixando atualização e verificando SHA-256…")
         if status_var:
             status_var.set("Baixando e verificando SHA-256...")
         def work():
@@ -330,7 +344,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                 with stage.open("rb") as binary:
                     if binary.read(2) != b"MZ":
                         raise ValueError("O arquivo baixado não é um executável Windows.")
-                self.after(0, lambda: self._launch_update(stage, target))
+                self.after(0, lambda: self._apply_downloaded_update(stage, target, auto))
             except (OSError, ValueError, urllib.error.URLError) as exc:
                 if stage is not None:
                     try:
@@ -340,9 +354,36 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                 self.after(0, lambda err=str(exc): self._update_failed(err))
         threading.Thread(target=work, daemon=True).start()
 
+    def failed_update_version(self):
+        try:
+            return (DATA_DIR / "update-failed-version.txt").read_text(encoding="ascii").strip()
+        except OSError:
+            return ""
+
+    def _apply_downloaded_update(self, stage, target, auto=False):
+        # Um boss pode ser iniciado enquanto o download acontece em outra thread.
+        if auto and not can_auto_install(self.bosses, time.time(), self.auto_update_idle_since):
+            try:
+                stage.unlink(missing_ok=True)
+            except OSError:
+                pass
+            self.update_busy = False
+            self.update_status.set("Atualização adiada • timers ativos ou uso recente")
+            return
+        self._launch_update(stage, target)
+
     def _update_failed(self, err):
         self.update_busy = False
-        messagebox.showerror("Falha na atualização", err)
+        self.update_retry_after = time.time() + 1800
+        self.update_status.set("Falha na atualização • nova tentativa em 30 minutos")
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            with (DATA_DIR / "update.log").open("a", encoding="utf-8") as logfile:
+                logfile.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} | Falha no download/reinício: {err}\n")
+        except OSError:
+            pass
+        if not self.__dict__.get("_install_is_automatic", False):
+            messagebox.showerror("Falha na atualização", err)
 
     def _launch_update(self, stage, target):
         """Troca o EXE, aguardando sinal real da interface e restaurando em falhas."""
@@ -361,6 +402,7 @@ $backup = __BACKUP__
 $marker = __MARKER__
 $logfile = __LOGFILE__
 $expected = __EXPECTED__
+$failedVersion = __FAILED_VERSION__
 $parentId = __PARENT_ID__
 $child = $null
 # Todas as aberturas (incluindo rollback) devem extrair recursos próprios.
@@ -410,12 +452,14 @@ try {
   if (-not $readyOk) {
     throw "O aplicativo não confirmou a versão $expected após 90 segundos."
   }
+  Remove-Item -LiteralPath $failedVersion -Force -ErrorAction SilentlyContinue
   Write-UpdateLog "Atualização confirmada: versão $expected iniciou normalmente."
   Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue
   exit 0
 } catch {
   $reason = $_.Exception.Message
+  try { Set-Content -LiteralPath $failedVersion -Value $expected -Encoding ASCII } catch {}
   Write-UpdateLog "Falha: $reason"
   Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue
   $env:YMIR_READY_MARKER = ""
@@ -477,6 +521,7 @@ try {
                 .replace("__MARKER__", quote(ready))
                 .replace("__LOGFILE__", quote(logfile))
                 .replace("__EXPECTED__", quote(expected))
+                .replace("__FAILED_VERSION__", quote(DATA_DIR / "update-failed-version.txt"))
                 .replace("__PARENT_ID__", str(os.getpid())))
         # utf-8-sig evita acentos corrompidos no Windows PowerShell 5.1.
         script.write_text(ps, encoding="utf-8-sig")
@@ -510,6 +555,7 @@ try {
                     floor = x.get("floor") if x.get("floor") in FLOORS else FLOORS[0]
                     boss = {"id": str(x.get("id", uuid.uuid4().hex)), "name": name,
                             "minutes": minutes, "category": category,
+                            "favorite": x.get("favorite") is True,
                             "channel": channel if category == MYRKHEIMR else "",
                             "floor": floor if category == FOLKVANGR else "",
                             "end": float(x.get("end", 0)),
@@ -687,6 +733,7 @@ try {
         self.minutes_entry.bind("<Return>", lambda _e: self.add_boss())
         self.name_entry.bind("<Return>", lambda _e: self.add_boss())
         form_panel.pack_forget()
+        self.build_filter_bar(CATEGORIES, (*CHANNELS, *FLOORS))
         self.section_heading = tk.Label(self.timer_view, text="SEUS BOSSES", bg=BG, fg=MUTED,
                  font=("Segoe UI", 9, "bold"))
         self.section_heading.pack(anchor="w", padx=16, pady=(8, 5))
@@ -819,6 +866,7 @@ try {
                    font=("Segoe UI", 9 if compact or nested else 11, "bold"),
                    padx=8, activebackground=PANEL, activeforeground=TEXT)
         button.pack(fill="x", pady=5)
+        button._compact_header = compact
         self.category_headers.append((category, button))
         # Recolher uma seção só esconde os cartões. O monitoramento segue global.
 
@@ -851,6 +899,10 @@ try {
         make_card = self.make_compact_card if compact else self.make_full_card
         for category in CATEGORIES:
             group = self.group_for_header(category)
+            if not compact:
+                group = self.filtered_bosses(group)
+                if self.filters_active() and not group:
+                    continue
             self.category_header(parent, category, group, compact=compact)
             if self.collapsed[category]:
                 continue
@@ -861,6 +913,10 @@ try {
                 )
                 for key in subgroups:
                     subgroup = self.group_for_header(key)
+                    if not compact:
+                        subgroup = self.filtered_bosses(subgroup)
+                        if self.filters_active() and not subgroup:
+                            continue
                     self.category_header(parent, key, subgroup, compact=compact, nested=True)
                     if self.collapsed[key]:
                         continue
@@ -880,6 +936,8 @@ try {
         for category, button in self.category_headers:
             if button.winfo_exists():
                 group = self.group_for_header(category)
+                if not button._compact_header:
+                    group = self.filtered_bosses(group)
                 button.config(text=self.category_title(category, group),
                               fg=WARNING if any(0 < b.get("end", 0) - time.time() <= NEAR_RESPAWN_SECONDS
                                                 for b in group)
@@ -961,7 +1019,13 @@ try {
         self.render()
 
     def start(self, boss):
-        killed_at = time.time()
+        self.record_kill(boss, time.time())
+
+    def record_kill(self, boss, killed_at):
+        now = time.time()
+        if not isinstance(killed_at, (int, float)) or isinstance(killed_at, bool) or not 0 < killed_at <= now:
+            raise ValueError("O horário da morte deve estar no passado ou no momento atual.")
+        self.auto_update_idle_since = now
         boss["end"] = killed_at + boss["minutes"] * 60
         boss["last_kill"] = killed_at
         self.history.append({"name": boss["name"], "category": boss.get("category", CATEGORIES[0]),
@@ -969,17 +1033,19 @@ try {
                              "floor": boss.get("floor", "") if boss.get("category") == FOLKVANGR else "",
                              "killed_at": killed_at, "respawn_at": boss["end"],
                              "boss_id": boss["id"]})
+        self.history.sort(key=lambda entry: float(entry["killed_at"]))
         self.history = self.history[-MAX_HISTORY:]
         self.save_history()
         self.render_history()
-        boss["warned_for"] = 0
-        boss["finished_for"] = 0
+        boss["warned_for"] = boss["end"] if boss["end"] - now <= 60 else 0
+        boss["finished_for"] = boss["end"] if boss["end"] <= now else 0
         self.alerted.discard(boss["id"])
         self.warning_alerted.discard(boss["id"])
         self.save()
         self.render()
 
     def reset(self, boss):
+        self.auto_update_idle_since = time.time()
         boss["end"] = 0
         boss["warned_for"] = 0
         boss["finished_for"] = 0
@@ -995,6 +1061,9 @@ try {
             self.render()
 
     def render(self):
+        visible = self.filtered_bosses()
+        self._filter_visible_ids = tuple(b["id"] for b in visible)
+        self.section_heading.configure(text=f"SEUS BOSSES  •  {len(visible)} de {len(self.bosses)}")
         for child in self.cards.winfo_children():
             child.destroy()
         self.category_headers = [(cat, button) for cat, button in self.category_headers if button.winfo_exists()]
@@ -1005,6 +1074,9 @@ try {
         if not self.bosses:
             tk.Label(self.cards, text="Nenhum boss cadastrado.\nAdicione o primeiro acima.",
                      bg=BG, fg=MUTED, font=("Segoe UI", 11), pady=34).pack(fill="x")
+        if self.bosses and not visible:
+            tk.Label(self.cards, text="Nenhum boss corresponde aos filtros. Use Limpar para ver todos.",
+                     bg=BG, fg=MUTED, wraplength=450, pady=25).pack(fill="x")
         self.render_sections(self.cards)
         self.refresh_times()
         self.render_compact()
@@ -1021,6 +1093,9 @@ try {
         top.pack(fill="x", padx=14, pady=(12, 4))
         GamerButton(top, text="Remover", command=lambda: self.delete(boss),
                     bg=PANEL, fg=MUTED, font=("Segoe UI", 8)).pack(side="right")
+        GamerButton(top, text="★" if boss.get("favorite") else "☆",
+                    command=lambda: self.toggle_favorite(boss), bg=PANEL, fg=WARNING,
+                    font=("Segoe UI", 14)).pack(side="right", padx=8)
         tk.Label(top, text=boss_location(boss).upper(), bg=PANEL, fg=region_color,
                  font=("Segoe UI", 8, "bold")).pack(anchor="w")
         name = tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
@@ -1059,7 +1134,11 @@ try {
         GamerButton(bottom, text="Editar tempo", command=lambda: self.edit_respawn_dialog(boss),
                     bg=PANEL, fg=PURPLE, padx=8, pady=6,
                     font=("Segoe UI", 9)).pack(side="right")
-        category_select = ttk.Combobox(bottom, values=CATEGORIES, state="readonly",
+        secondary = tk.Frame(card, bg=PANEL)
+        secondary.pack(fill="x", padx=14, pady=(0, 10))
+        GamerButton(secondary, text="Morreu há…", command=lambda: self.previous_death_dialog(boss),
+                    bg=PANEL, fg=WARNING, padx=8, pady=4, font=("Segoe UI", 9)).pack(side="right")
+        category_select = ttk.Combobox(secondary, values=CATEGORIES, state="readonly",
                                        width=16, font=("Segoe UI", 8))
         category_select.set(boss.get("category", CATEGORIES[0]))
         category_select.pack(side="left", padx=(0, 6))
@@ -1290,6 +1369,10 @@ try {
 
     def tick(self):
         self.check_alerts()  # Todos os canais e pisos, mesmo recolhidos.
+        if self.filters_active():
+            visible_ids = tuple(b["id"] for b in self.filtered_bosses())
+            if visible_ids != self._filter_visible_ids:
+                self.render()
         self.refresh_times()
         self.refresh_compact()
         self.refresh_category_headers()
