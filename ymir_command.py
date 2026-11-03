@@ -50,6 +50,7 @@ class CommandCenterMixin:
         self.page_heading = tk.Label(heading, text="Central de combate", bg=BG, fg=TEXT,
                                      font=("Segoe UI", 23, "bold"))
         self.page_heading.pack(anchor="w", pady=(2, 0))
+        self.compact_summary = tk.Label(heading, bg=BG, fg=MUTED, font=("Segoe UI", 9))
 
         hero = tk.Frame(self.content, bg=PANEL, highlightbackground=BORDER,
                         highlightthickness=1)
@@ -73,3 +74,15 @@ class CommandCenterMixin:
                                      font=("Segoe UI", 8, "bold"))
         self.target_state.grid(row=3, column=1, sticky="e", padx=(8, 18), pady=(4, 14))
         return nav
+
+    def adapt_layout(self, event):
+        if event.widget is not self:
+            return
+        if self.winfo_height() < 740 or self.winfo_width() < 900:
+            self.dashboard_frame.pack_forget()
+            self.compact_summary.pack(anchor="w", pady=(4, 0))
+        else:
+            self.compact_summary.pack_forget()
+            view = {"timers": self.timer_view, "upcoming": self.upcoming_view,
+                    "history": self.history_view}[self.active_tab]
+            self.dashboard_frame.pack(fill="x", padx=16, pady=(2, 4), before=view)

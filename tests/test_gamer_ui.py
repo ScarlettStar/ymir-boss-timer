@@ -77,6 +77,10 @@ class GamerUISmokeTests(unittest.TestCase):
                         self.assertGreater(app.canvas.winfo_height(), 35)
                         self.assertLessEqual(app.sidebar.winfo_width(), 180)
                         self.assertGreater(app.content.winfo_width(), 600)
+                    app.toggle_boss_form()
+                    app.update()
+                    self.assertFalse(app.form_panel.winfo_ismapped())
+                    self.assertGreater(app.canvas.winfo_height(), 180)
                     # Optional screenshots contain only this temporary fixture's data.
                     screenshot_dir = os.environ.get("YMIR_UI_SCREENSHOT_DIR")
                     if screenshot_dir:

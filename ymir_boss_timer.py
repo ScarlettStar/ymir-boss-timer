@@ -622,6 +622,9 @@ try {
             style.theme_use("clam")
         style.configure("TCombobox", fieldbackground=PANEL, background=PANEL,
                         foreground=TEXT, arrowcolor=ACCENT)
+        style.map("TCombobox", fieldbackground=[("readonly", PANEL)],
+                  foreground=[("readonly", TEXT)], selectbackground=[("readonly", PANEL)],
+                  selectforeground=[("readonly", TEXT)])
         style.configure("Vertical.TScrollbar", background=PANEL, troughcolor=BG,
                         bordercolor=BG, arrowcolor=ACCENT)
         style.configure("Respawn.Horizontal.TProgressbar", troughcolor=BG,
@@ -647,7 +650,7 @@ try {
         self.build_upcoming_ui()
         bar = tk.Frame(self.timer_view, bg=PANEL)
         bar.pack(fill="x", padx=16, pady=8, ipady=7)
-        GamerButton(bar, text="+ Cadastrar boss", command=self.focus_boss_form,
+        GamerButton(bar, text="+ Cadastrar boss", command=self.toggle_boss_form,
                     bg=ACCENT, fg=BG, padx=12, pady=5,
                     font=("Segoe UI", 9, "bold")).pack(side="right", padx=8)
         tk.Checkbutton(bar, text="Sempre no topo", variable=self.always_on_top,
@@ -656,7 +659,7 @@ try {
                        font=("Segoe UI", 9)).pack(side="left", padx=8)
         tk.Label(bar, text="🔔 Aviso: 1 min", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 9)).pack(side="left", padx=(4, 3))
-        form_panel = tk.Frame(self.timer_view, bg=PANEL, highlightbackground=BORDER,
+        self.form_panel = form_panel = tk.Frame(self.timer_view, bg=PANEL, highlightbackground=BORDER,
                               highlightthickness=1)
         form_panel.pack(fill="x", padx=16, pady=(6, 8))
         tk.Label(form_panel, text="NOVO BOSS", bg=PANEL, fg=PURPLE,
@@ -683,8 +686,10 @@ try {
         form.columnconfigure(2, weight=2)
         self.minutes_entry.bind("<Return>", lambda _e: self.add_boss())
         self.name_entry.bind("<Return>", lambda _e: self.add_boss())
-        tk.Label(self.timer_view, text="SEUS BOSSES", bg=BG, fg=MUTED,
-                 font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=16, pady=(8, 5))
+        form_panel.pack_forget()
+        self.section_heading = tk.Label(self.timer_view, text="SEUS BOSSES", bg=BG, fg=MUTED,
+                 font=("Segoe UI", 9, "bold"))
+        self.section_heading.pack(anchor="w", padx=16, pady=(8, 5))
         outer = tk.Frame(self.timer_view, bg=BG)
         outer.pack(fill="both", expand=True, padx=16, pady=(0, 10))
         self.canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
@@ -701,10 +706,18 @@ try {
         self.footer = tk.Label(self.timer_view, text="Alertas de todas as seções ativos mesmo recolhidas • Mantenha o app aberto", bg=BG,
                                fg=MUTED, font=("Segoe UI", 9))
         self.footer.pack(pady=(0, 12))
+        self.bind("<Configure>", self.adapt_layout, add="+")
 
     def focus_boss_form(self):
         self.switch_tab("timers")
+        self.form_panel.pack(fill="x", padx=16, pady=(6, 8), before=self.section_heading)
         self.name_entry.focus_set()
+
+    def toggle_boss_form(self):
+        if self.form_panel.winfo_ismapped():
+            self.form_panel.pack_forget()
+        else:
+            self.focus_boss_form()
 
     def build_history_ui(self):
         heading = tk.Frame(self.history_view, bg=BG)

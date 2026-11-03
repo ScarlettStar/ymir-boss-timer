@@ -32,7 +32,7 @@ from ymir_command import CommandCenterMixin
 
 class YmirVisualMixin(CommandCenterMixin):
     def build_dashboard(self):
-        summary = tk.Frame(self.content, bg=BG)
+        self.dashboard_frame = summary = tk.Frame(self.content, bg=BG)
         summary.pack(fill="x", padx=16, pady=(2, 4))
         self.dashboard_labels = []
         for index, (title, color) in enumerate((
@@ -54,6 +54,9 @@ class YmirVisualMixin(CommandCenterMixin):
         for label, count in zip(self.dashboard_labels, dashboard_counts(self.bosses, now)):
             label.configure(text=str(count))
 
+        total, active, soon, ready = dashboard_counts(self.bosses, now)
+        self.compact_summary.configure(
+            text=f"{total} bosses   /   {active} ativos   /   {soon} em até 5 min   /   {ready} disponíveis")
         targets = self.upcoming_bosses(now)
         if not targets:
             self.target_name.configure(text="Nenhum respawn em andamento")
