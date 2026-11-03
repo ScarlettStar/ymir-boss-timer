@@ -94,6 +94,14 @@ class PreviousDeathTests(unittest.TestCase):
         app.notify.assert_not_called()
         self.assertEqual(app.bosses[0]["end"], 9400)
 
+    def test_new_one_minute_timer_still_issues_its_normal_warning(self):
+        app = self.app()
+        app.bosses[0]["minutes"] = 1
+        with patch.object(ymir.time, "time", return_value=10000):
+            app.start(app.bosses[0])
+            app.check_alerts()
+        app.notify.assert_called_once()
+
     def test_invalid_times_leave_boss_and_history_unchanged(self):
         app = self.app()
         original = json.dumps(app.bosses)
@@ -128,6 +136,8 @@ class AutomaticUpdateTests(unittest.TestCase):
         app = ymir.BossTimerApp.__new__(ymir.BossTimerApp)
         app.bosses = [{"end": 2000}]
         app.auto_update_idle_since = 0
+        app.auto_update_enabled = Mock()
+        app.auto_update_enabled.get.return_value = True
         app.update_busy = True
         app.update_status = Mock()
         app._launch_update = Mock()
@@ -144,10 +154,28 @@ class AutomaticUpdateTests(unittest.TestCase):
         app = ymir.BossTimerApp.__new__(ymir.BossTimerApp)
         app.bosses = []
         app.auto_update_idle_since = 0
+        app.auto_update_enabled = Mock()
+        app.auto_update_enabled.get.return_value = True
         app._launch_update = Mock()
         with patch.object(ymir.time, "time", return_value=1000):
             app._apply_downloaded_update("stage", "target", auto=True)
         app._launch_update.assert_called_once_with("stage", "target")
+
+    def test_disabling_automatic_updates_during_download_cancels_install(self):
+        app = ymir.BossTimerApp.__new__(ymir.BossTimerApp)
+        app.bosses = []
+        app.auto_update_idle_since = 0
+        app.auto_update_enabled = Mock()
+        app.auto_update_enabled.get.return_value = False
+        app.update_status = Mock()
+        app._launch_update = Mock()
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp) / "test.exe.new"
+            stage.write_bytes(b"verified")
+            with patch.object(ymir.time, "time", return_value=1000):
+                app._apply_downloaded_update(stage, Path(tmp) / "test.exe", auto=True)
+            self.assertFalse(stage.exists())
+        app._launch_update.assert_not_called()
 
     def test_background_download_error_is_logged_without_repeated_popup(self):
         app = ymir.BossTimerApp.__new__(ymir.BossTimerApp)
@@ -167,6 +195,8 @@ class AutomaticUpdateTests(unittest.TestCase):
         app.update_busy = False
         app.bosses = []
         app.auto_update_idle_since = 0
+        app.auto_update_enabled = Mock()
+        app.auto_update_enabled.get.return_value = True
         app.update_retry_after = 0
         app.failed_update_version = Mock(return_value="3.1.0")
         with patch.object(ymir.sys, "frozen", True, create=True), \

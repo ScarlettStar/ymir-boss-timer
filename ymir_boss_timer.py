@@ -344,7 +344,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                 with stage.open("rb") as binary:
                     if binary.read(2) != b"MZ":
                         raise ValueError("O arquivo baixado não é um executável Windows.")
-                self.after(0, lambda: self._apply_downloaded_update(stage, target, auto))
+                self.after(0, lambda: self._apply_downloaded_update(stage, target, auto, info["version"]))
             except (OSError, ValueError, urllib.error.URLError) as exc:
                 if stage is not None:
                     try:
@@ -360,9 +360,11 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         except OSError:
             return ""
 
-    def _apply_downloaded_update(self, stage, target, auto=False):
+    def _apply_downloaded_update(self, stage, target, auto=False, version=None):
         # Um boss pode ser iniciado enquanto o download acontece em outra thread.
-        if auto and not can_auto_install(self.bosses, time.time(), self.auto_update_idle_since):
+        stale = version is not None and (not self.latest_release or self.latest_release["version"] != version)
+        if stale or (auto and (not self.auto_update_enabled.get()
+                               or not can_auto_install(self.bosses, time.time(), self.auto_update_idle_since))):
             try:
                 stage.unlink(missing_ok=True)
             except OSError:
@@ -1037,7 +1039,7 @@ try {
         self.history = self.history[-MAX_HISTORY:]
         self.save_history()
         self.render_history()
-        boss["warned_for"] = boss["end"] if boss["end"] - now <= 60 else 0
+        boss["warned_for"] = boss["end"] if killed_at < now - 1 and boss["end"] - now <= 60 else 0
         boss["finished_for"] = boss["end"] if boss["end"] <= now else 0
         self.alerted.discard(boss["id"])
         self.warning_alerted.discard(boss["id"])
