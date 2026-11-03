@@ -20,7 +20,7 @@ Envie o arquivo `ymir_boss_timer.py` da versão 1.7 para a **raiz deste reposit�
 5. Baixe o EXE desta primeira publicação e coloque-o em uma pasta gravável (ex.: Documentos/YmirBossTimer).
 6. No aplicativo, abra **ATUALIZAÇÕES**, configure `ScarlettStar/ymir-boss-timer` e clique em **Salvar e verificar**.
 
-Para futuras versões, altere o código e `APP_VERSION` (por exemplo, `1.8.0`) antes de executar **Run workflow** com a mesma versão. O atualizador vai consultar automaticamente o Release mais recente, mas só instala após confirmação.
+Para futuras versões, altere o código e `APP_VERSION` (por exemplo, `1.8.0`) antes de executar **Run workflow** com a mesma versão. O atualizador vai consultar automaticamente o Release mais recente, e, se a opção automática estiver habilitada, instala após dois minutos sem timers ativos.
 
 ## Dados e segurança
 Os cadastros e históricos são armazenados localmente em `%APPDATA%\YmirBossTimer` e não precisam ser enviados ao GitHub. **Não publique `bosses.json`, `history.json` ou outros dados pessoais**.
@@ -45,7 +45,7 @@ O mecanismo de atualização verifica SHA-256 e exige confirmação. O SHA-256 d
 
 **Backups:** cópia local dos arquivos JSON ao iniciar e a cada seis horas, em \`%APPDATA%\YmirBossTimer\backups\`, com retenção das últimas 12 cópias. Abra essa pasta pelo botão "Abrir backups" na aba Histórico. Nenhum dado dos bosses vai para o GitHub.
 
-**Atualizações automáticas:** a publicação no GitHub acontece automaticamente quando uma nova versão é gravada em \`ymir_boss_timer.py\` no ramo \`main\`, desde que o workflow passe pelos testes. O app verifica Releases ao iniciar e a cada 30 minutos; na versão 2.0, com atualização automática habilitada, instala uma versão pendente após dois minutos sem contagem regressiva ativa. **Uma atualização reinicia o programa**. O atualizador verifica SHA-256, conserva temporariamente o executável anterior e tenta recuperá-lo se o novo processo não inicializar. Não equivale a assinatura digital do executável.
+**Publicação manual (3.0):** alterações e merges não publicam Releases. Use Actions → Publicar aplicativo Windows → Run workflow quando decidir distribuir uma versão. O app verifica Releases ao iniciar e a cada 30 minutos; na versão 2.0, com atualização automática habilitada, instala uma versão pendente após dois minutos sem contagem regressiva ativa. **Uma atualização reinicia o programa**. O atualizador verifica SHA-256, conserva temporariamente o executável anterior e tenta recuperá-lo se o novo processo não inicializar. Não equivale a assinatura digital do executável.
 
 **Primeira atualização de 1.9 para 2.0:** a v1.9 ainda usa o mecanismo manual, então faça essa transição pelo botão "Atualizações → Salvar e verificar → Instalar atualização". As seguintes poderão acontecer sem esse clique, enquanto o aplicativo estiver aberto e sem contagens ativas.
 
@@ -68,7 +68,7 @@ iniciado permanecem aguardando uma morte. O histórico mantém as mortes e
 corrige a previsão vinculada à última morte registrada, sem apagar entradas.
 Uma cópia de segurança dos dados é criada antes da alteração.
 
-**Atualização:** o código publica automaticamente pelo GitHub Actions.
+**Publicação:** a partir da 3.0, o GitHub Actions publica apenas por execução manual.
 O aplicativo v2.0 verifica as novas versões e instala a v2.1 quando estiver
 aberto e sem timers ativos por pelo menos dois minutos (se a opção de
 atualização automática estiver habilitada).
@@ -81,3 +81,21 @@ atualização automática estiver habilitada).
 - Adiciona arquivo de diagnóstico local em \`%APPDATA%\YmirBossTimer\update.log\`; o PowerShell é gravado com BOM UTF-8 para preservar acentuação no Windows.
 - Acrescenta teste de inicialização do EXE ao fluxo de publicação no GitHub Actions, além dos testes unitários.
 - **Para quem ficou na v2.0 após um rollback da v2.1:** atualize uma única vez instalando o executável v2.1.1 publicado no Release, com o aplicativo antigo fechado e guardando a cópia do antigo executável. Os arquivos dos bosses permanecem em \`%APPDATA%\YmirBossTimer\`.
+
+
+
+## Versão 3.0.0 — central gamer
+
+- Tema compartilhado em azul profundo, verde neon e violeta em todas as janelas.
+- Cabeçalho e painel de resumo: cadastros, timers ativos, respawns em até cinco minutos e disponíveis. As contagens incluem seções recolhidas.
+- Cards com bordas, faixa de cor, cronômetro ampliado e progresso de respawn.
+- Botões com realce ao passar o mouse e foco pelo teclado, sem loops adicionais de animação.
+- Mantidos canais, pisos, edição de duração, histórico, backups, alertas, overlay, modo compacto, bandeja e atualizador. Dados continuam no mesmo diretório e formato.
+- A publicação agora exige execução manual do workflow; PRs e merges não criam Releases.
+
+### Validação
+
+Execute `python -m unittest discover -s tests -v` e `python -m py_compile ymir_boss_timer.py ymir_features.py ymir_theme.py`.
+Para o teste real de interface, use `YMIR_GUI_TESTS=1` em um ambiente com tela (no PowerShell: `$env:YMIR_GUI_TESTS = "1"`). O workflow **Testes do aplicativo** executa esse teste no Windows em PRs, sem publicar uma versão.
+
+Antes de distribuir, revise visualmente no Windows com sua escala de tela e confira som, notificações nativas e bandeja; esses recursos do sistema não são cobertos pelo teste de interface.
