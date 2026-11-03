@@ -30,6 +30,29 @@ class UpdaterRecoveryTest(unittest.TestCase):
                 self.assertNotIn("if ($child.HasExited) { break }", script)
         app.quit_app.assert_called_once()
 
+    def test_restart_requests_independent_pyinstaller_instance_without_mutating_parent(self):
+        app = ymir.BossTimerApp.__new__(ymir.BossTimerApp)
+        app.latest_release = {"version": "v3.0.1"}
+        app.quit_app = Mock()
+        inherited = {"_PYI_APPLICATION_HOME_DIR": "old-extraction",
+                     "_PYI_ARCHIVE_FILE": "YmirBossTimer.exe", "OTHER_SETTING": "keep"}
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.dict(ymir.os.environ, inherited, clear=True), \
+                patch.object(ymir.tempfile, "gettempdir", return_value=tmp), \
+                patch.object(ymir.subprocess, "Popen") as launch:
+            before = dict(ymir.os.environ)
+            app._launch_update(Path(tmp) / "YmirBossTimer.exe.new",
+                               Path(tmp) / "YmirBossTimer.exe")
+            child_env = launch.call_args.kwargs["env"]
+            self.assertEqual(child_env["PYINSTALLER_RESET_ENVIRONMENT"], "1")
+            self.assertEqual(child_env["OTHER_SETTING"], "keep")
+            self.assertEqual(dict(ymir.os.environ), before)
+            script = next(Path(tmp).glob("*.ps1")).read_text(encoding="utf-8-sig")
+            self.assertLess(script.index('$env:PYINSTALLER_RESET_ENVIRONMENT = "1"'),
+                            script.index("Start-Process -FilePath $target"))
+            self.assertIn("Confirmação recebida", script)
+        app.quit_app.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

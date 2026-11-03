@@ -48,6 +48,7 @@ class GamerUISmokeTests(unittest.TestCase):
                     self.assertEqual(len(app.bosses), 7)
                     boss = app.bosses[0]
                     app.start(boss)
+                    self.assertEqual(app.target_name.cget("text"), boss["name"])
                     app.refresh_times()
                     self.assertEqual(app.dashboard_labels[1].cget("text"), "1")
                     self.assertGreater(boss["end"], time.time())
@@ -55,6 +56,8 @@ class GamerUISmokeTests(unittest.TestCase):
                     for tab in ("upcoming", "history", "timers"):
                         app.switch_tab(tab)
                         app.update_idletasks()
+                        self.assertTrue(app.sidebar.winfo_ismapped())
+                        self.assertEqual(app.active_tab, tab)
                     app.toggle_overlay()
                     app.refresh_overlay()
                     app.close_overlay()
@@ -64,7 +67,35 @@ class GamerUISmokeTests(unittest.TestCase):
                     app.reset(boss)
                     self.assertEqual(boss["end"], 0)
                     self.assertEqual(len(app.history), 1)
-                    app.geometry("820x640")
+                    self.assertEqual(app.target_timer.cget("text"), "--:--")
+                    app.focus_boss_form()
                     app.update_idletasks()
+                    for width, height in ((820, 640), (min(1180, app.winfo_screenwidth() - 20),
+                                                        min(850, app.winfo_screenheight() - 80))):
+                        app.geometry(f"{width}x{height}+5+5")
+                        app.update()
+                        self.assertGreater(app.canvas.winfo_height(), 35)
+                        self.assertLessEqual(app.sidebar.winfo_width(), 180)
+                        self.assertGreater(app.content.winfo_width(), 600)
+                    app.toggle_boss_form()
+                    app.update()
+                    self.assertFalse(app.form_panel.winfo_ismapped())
+                    self.assertGreater(app.canvas.winfo_height(), 180)
+                    # Optional screenshots contain only this temporary fixture's data.
+                    screenshot_dir = os.environ.get("YMIR_UI_SCREENSHOT_DIR")
+                    if screenshot_dir:
+                        from PIL import ImageGrab
+                        out = Path(screenshot_dir)
+                        out.mkdir(parents=True, exist_ok=True)
+                        app.start(boss)
+                        app.geometry("820x640+5+5")
+                        app.update()
+                        for name, geometry in (("compact", "820x640+5+5"),
+                                               ("desktop", f"{min(1180, app.winfo_screenwidth() - 20)}x{min(850, app.winfo_screenheight() - 80)}+5+5")):
+                            app.geometry(geometry)
+                            app.update()
+                            ImageGrab.grab(bbox=(app.winfo_rootx(), app.winfo_rooty(),
+                                                app.winfo_rootx() + app.winfo_width(),
+                                                app.winfo_rooty() + app.winfo_height())).save(out / f"{name}.png")
                 finally:
                     app.quit_app()

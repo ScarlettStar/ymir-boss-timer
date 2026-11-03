@@ -22,7 +22,7 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.1"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
@@ -103,7 +103,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry(f"{min(1020, self.winfo_screenwidth())}x"
+        self.geometry(f"{min(1180, self.winfo_screenwidth())}x"
                       f"{min(900, self.winfo_screenheight() - 80)}")
         self.minsize(820, 640)
         self.configure(bg=BG)
@@ -363,6 +363,8 @@ $logfile = __LOGFILE__
 $expected = __EXPECTED__
 $parentId = __PARENT_ID__
 $child = $null
+# Todas as aberturas (incluindo rollback) devem extrair recursos próprios.
+$env:PYINSTALLER_RESET_ENVIRONMENT = "1"
 $swapped = $false
 function Write-UpdateLog([string]$message) {
   try {
@@ -386,6 +388,7 @@ try {
   $child = Start-Process -FilePath $target -PassThru -ErrorAction Stop
   Write-UpdateLog "Executável iniciado. Aguardando confirmação da interface."
   $readyOk = $false
+  $lastReported = ""
   # O PyInstaller --onefile pode iniciar um processo secundário: não confiar
   # no estado do PID retornado por Start-Process como prova de falha.
   for ($i = 0; $i -lt 90; $i++) {
@@ -393,6 +396,10 @@ try {
     if (Test-Path -LiteralPath $marker) {
       try {
         $written = (Get-Content -LiteralPath $marker -Raw -Encoding ASCII).Trim()
+        if ($written -ne $lastReported) {
+          Write-UpdateLog "Confirmação recebida: versão $written; esperada: $expected"
+          $lastReported = $written
+        }
         if ($written -eq $expected) {
           $readyOk = $true
           break
@@ -474,8 +481,13 @@ try {
         # utf-8-sig evita acentos corrompidos no Windows PowerShell 5.1.
         script.write_text(ps, encoding="utf-8-sig")
         try:
+            # O PowerShell sobrevive ao app e transmite este ambiente ao EXE novo.
+            # Sem reset, o bootloader pode reutilizar os recursos temporários antigos.
+            restart_env = os.environ.copy()
+            restart_env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
             subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), close_fds=True)
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), close_fds=True,
+                             env=restart_env)
             self.quit_app()
         except OSError as exc:
             self._update_failed(str(exc))
@@ -540,6 +552,9 @@ try {
 
     def switch_tab(self, tab):
         self.active_tab = tab
+        self.page_heading.configure(text={"timers": "Central de combate",
+                                          "upcoming": "Radar de respawns",
+                                          "history": "Histórico de combate"}[tab])
         for view in (self.timer_view, self.history_view, self.upcoming_view):
             view.pack_forget()
         selected = {"timers": self.timer_view, "history": self.history_view,
@@ -607,66 +622,57 @@ try {
             style.theme_use("clam")
         style.configure("TCombobox", fieldbackground=PANEL, background=PANEL,
                         foreground=TEXT, arrowcolor=ACCENT)
+        style.map("TCombobox", fieldbackground=[("readonly", PANEL)],
+                  foreground=[("readonly", TEXT)], selectbackground=[("readonly", PANEL)],
+                  selectforeground=[("readonly", TEXT)])
         style.configure("Vertical.TScrollbar", background=PANEL, troughcolor=BG,
                         bordercolor=BG, arrowcolor=ACCENT)
         style.configure("Respawn.Horizontal.TProgressbar", troughcolor=BG,
                         background=ACCENT, borderwidth=0, thickness=4)
-        header = tk.Frame(self, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
-        header.pack(fill="x", padx=16, pady=(16, 8))
-        tk.Label(header, text="⚔  YMIR BOSS TIMER", bg=PANEL, fg=TEXT,
-                 font=("Segoe UI", 26, "bold")).pack(anchor="w", padx=18, pady=(14, 2))
-        tk.Label(header, text=f"LEGEND OF YMIR   /   CENTRAL DE RESPAWNS   /   v{APP_VERSION}", bg=PANEL, fg=ACCENT,
-                 font=("Segoe UI", 10)).pack(anchor="w", padx=20, pady=(2, 14))
+        nav = self.build_command_shell(APP_VERSION)
         self.build_dashboard()
-        nav = tk.Frame(self, bg=BG)
-        nav.pack(fill="x", padx=16, pady=(10, 2))
-        self.tab_timers = GamerButton(nav, text="  ◷  TIMERS  ", command=lambda: self.switch_tab("timers"),
-                                    bg=ACCENT, fg=BG, relief="flat", padx=15, pady=10,
-                                    font=("Segoe UI", 10, "bold"), cursor="hand2")
-        self.tab_timers.pack(side="left", padx=(0, 9))
-        self.tab_history = GamerButton(nav, text="  ▤  HISTÓRICO  ", command=lambda: self.switch_tab("history"),
-                                     bg=PANEL, fg=TEXT, relief="flat", padx=15, pady=10,
-                                     font=("Segoe UI", 10, "bold"), cursor="hand2")
-        self.tab_history.pack(side="left")
-        self.tab_upcoming = GamerButton(nav, text="  ◷  PRÓXIMOS  ", command=lambda: self.switch_tab("upcoming"),
-                                      bg=PANEL, fg=TEXT, relief="flat", padx=12, pady=10,
-                                      font=("Segoe UI", 10, "bold"), cursor="hand2")
-        self.tab_upcoming.pack(side="left", padx=(9, 0))
-        GamerButton(nav, text="⬇ ATUALIZAÇÕES", command=self.updates_dialog, bg=PANEL, fg=ACCENT,
-                  relief="flat", padx=15, pady=10, font=("Segoe UI", 10, "bold"),
-                  cursor="hand2").pack(side="right")
-        self.timer_view = tk.Frame(self, bg=BG)
+        for key, title, attribute in (
+            ("timers", "◷  Meus bosses", "tab_timers"),
+            ("upcoming", "⌁  Próximos", "tab_upcoming"),
+            ("history", "▤  Histórico", "tab_history"),
+        ):
+            button = GamerButton(nav, text=title, command=lambda tab=key: self.switch_tab(tab),
+                                 bg=ACCENT if key == "timers" else PANEL,
+                                 fg=BG if key == "timers" else TEXT, relief="flat",
+                                 anchor="w", padx=12, pady=11, font=("Segoe UI", 10, "bold"))
+            button.pack(fill="x", pady=4)
+            setattr(self, attribute, button)
+        self.timer_view = tk.Frame(self.content, bg=BG)
         self.timer_view.pack(fill="both", expand=True)
-        self.history_view = tk.Frame(self, bg=BG)
-        self.upcoming_view = tk.Frame(self, bg=BG)
+        self.history_view = tk.Frame(self.content, bg=BG)
+        self.upcoming_view = tk.Frame(self.content, bg=BG)
         self.build_history_ui()
         self.build_upcoming_ui()
         bar = tk.Frame(self.timer_view, bg=PANEL)
         bar.pack(fill="x", padx=16, pady=8, ipady=7)
-        GamerButton(bar, text="◈ Overlay gamer", command=self.toggle_overlay, bg=PURPLE,
-                  fg=BG, relief="flat", font=("Segoe UI", 9, "bold"),
-                  cursor="hand2").pack(side="right", padx=(0, 7))
-        GamerButton(bar, text="⊟ Bandeja", command=self.hide_to_tray, bg=PANEL,
-                  fg=TEXT, relief="flat", font=("Segoe UI", 9),
-                  cursor="hand2").pack(side="right", padx=(0, 7))
-        GamerButton(bar, text="◱ Modo compacto", command=self.open_compact, bg=ACCENT,
-                  fg=BG, relief="flat", font=("Segoe UI", 9, "bold"),
-                  cursor="hand2").pack(side="right", padx=8)
+        GamerButton(bar, text="+ Cadastrar boss", command=self.toggle_boss_form,
+                    bg=ACCENT, fg=BG, padx=12, pady=5,
+                    font=("Segoe UI", 9, "bold")).pack(side="right", padx=8)
         tk.Checkbutton(bar, text="Sempre no topo", variable=self.always_on_top,
                        command=self.update_topmost, bg=PANEL, fg=TEXT, selectcolor=BG,
                        activebackground=PANEL, activeforeground=TEXT,
                        font=("Segoe UI", 9)).pack(side="left", padx=8)
         tk.Label(bar, text="🔔 Aviso: 1 min", bg=PANEL, fg=TEXT,
                  font=("Segoe UI", 9)).pack(side="left", padx=(4, 3))
-        form = tk.Frame(self.timer_view, bg=BG)
-        form.pack(fill="x", padx=16, pady=(6, 8))
-        tk.Label(form, text="Boss", bg=BG, fg=MUTED).grid(row=0, column=0, sticky="w")
-        tk.Label(form, text="Seção", bg=BG, fg=MUTED).grid(row=0, column=2, sticky="w")
-        tk.Label(form, text="Respawn (min)", bg=BG, fg=MUTED).grid(row=0, column=1, sticky="w")
-        self.name_entry = tk.Entry(form, bg=PANEL, fg=TEXT, insertbackground=TEXT, relief="flat",
+        self.form_panel = form_panel = tk.Frame(self.timer_view, bg=PANEL, highlightbackground=BORDER,
+                              highlightthickness=1)
+        form_panel.pack(fill="x", padx=16, pady=(6, 8))
+        tk.Label(form_panel, text="NOVO BOSS", bg=PANEL, fg=PURPLE,
+                 font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=12, pady=(10, 4))
+        form = tk.Frame(form_panel, bg=PANEL)
+        form.pack(fill="x", padx=12, pady=(0, 12))
+        tk.Label(form, text="Nome do boss", bg=PANEL, fg=MUTED).grid(row=0, column=0, sticky="w")
+        tk.Label(form, text="Região", bg=PANEL, fg=MUTED).grid(row=0, column=2, sticky="w")
+        tk.Label(form, text="Respawn (min)", bg=PANEL, fg=MUTED).grid(row=0, column=1, sticky="w")
+        self.name_entry = tk.Entry(form, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat",
                                    font=("Segoe UI", 10))
         self.name_entry.grid(row=1, column=0, sticky="ew", ipady=8, padx=(0, 8))
-        self.minutes_entry = tk.Entry(form, bg=PANEL, fg=TEXT, insertbackground=TEXT, relief="flat",
+        self.minutes_entry = tk.Entry(form, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat",
                                       width=12, font=("Segoe UI", 10))
         self.minutes_entry.grid(row=1, column=1, sticky="ew", ipady=8, padx=(0, 8))
         self.category_select = ttk.Combobox(form, textvariable=self.category_var, values=CATEGORIES,
@@ -680,8 +686,10 @@ try {
         form.columnconfigure(2, weight=2)
         self.minutes_entry.bind("<Return>", lambda _e: self.add_boss())
         self.name_entry.bind("<Return>", lambda _e: self.add_boss())
-        tk.Label(self.timer_view, text="SEUS BOSSES", bg=BG, fg=MUTED,
-                 font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=16, pady=(8, 5))
+        form_panel.pack_forget()
+        self.section_heading = tk.Label(self.timer_view, text="SEUS BOSSES", bg=BG, fg=MUTED,
+                 font=("Segoe UI", 9, "bold"))
+        self.section_heading.pack(anchor="w", padx=16, pady=(8, 5))
         outer = tk.Frame(self.timer_view, bg=BG)
         outer.pack(fill="both", expand=True, padx=16, pady=(0, 10))
         self.canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
@@ -698,6 +706,18 @@ try {
         self.footer = tk.Label(self.timer_view, text="Alertas de todas as seções ativos mesmo recolhidas • Mantenha o app aberto", bg=BG,
                                fg=MUTED, font=("Segoe UI", 9))
         self.footer.pack(pady=(0, 12))
+        self.bind("<Configure>", self.adapt_layout, add="+")
+
+    def focus_boss_form(self):
+        self.switch_tab("timers")
+        self.form_panel.pack(fill="x", padx=16, pady=(6, 8), before=self.section_heading)
+        self.name_entry.focus_set()
+
+    def toggle_boss_form(self):
+        if self.form_panel.winfo_ismapped():
+            self.form_panel.pack_forget()
+        else:
+            self.focus_boss_form()
 
     def build_history_ui(self):
         heading = tk.Frame(self.history_view, bg=BG)
@@ -990,54 +1010,61 @@ try {
         self.render_compact()
 
     def make_full_card(self, boss, nested=False):
-            card = tk.Frame(self.cards, bg=PANEL, highlightthickness=1,
-                            highlightbackground=BORDER)
-            card.pack(fill="x", pady=(0, 9), ipady=9, padx=(26 if nested else 0, 0))
-            tk.Frame(card, bg=PURPLE if boss.get("category") != CATEGORIES[0] else ACCENT,
-                     height=3).pack(fill="x")
-            top = tk.Frame(card, bg=PANEL)
-            top.pack(fill="x", padx=12, pady=(4, 3))
-            tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
-                     font=("Segoe UI", 11, "bold"), anchor="w").pack(side="left", fill="x", expand=True)
-            GamerButton(top, text="Editar tempo", command=lambda b=boss: self.edit_respawn_dialog(b),
-                      bg="#34465e", fg=ACCENT, relief="flat", cursor="hand2",
-                      font=("Segoe UI", 9, "bold"), padx=10, pady=3).pack(side="right", padx=(0, 7))
-            GamerButton(top, text="✕", command=lambda b=boss: self.delete(b), bg=PANEL,
-                      fg=MUTED, relief="flat", cursor="hand2").pack(side="right")
-            mid = tk.Frame(card, bg=PANEL)
-            mid.pack(fill="x", padx=12, pady=2)
-            timer = tk.Label(mid, text="", bg=PANEL, fg=ACCENT, font=("Consolas", 27, "bold"))
-            timer.pack(side="left")
-            status = tk.Label(mid, text="", bg=PANEL, fg=MUTED, font=("Segoe UI", 9))
-            status.pack(side="left", padx=12)
-            self.time_labels[boss["id"]] = timer
-            self.status_labels[boss["id"]] = status
-            respawn = tk.Label(card, text="", bg=PANEL, fg=ACCENT,
-                               font=("Segoe UI", 10, "bold"), anchor="w")
-            respawn.pack(fill="x", padx=12, pady=(0, 5))
-            self.respawn_labels[boss["id"]] = respawn
-            tk.Label(card, text=("Última morte: " + datetime.fromtimestamp(boss["last_kill"]).strftime("%d/%m às %H:%M:%S"))
-                     if boss.get("last_kill") else "Última morte: ainda não registrada",
-                     bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=12, pady=(0, 5))
-            progress = ttk.Progressbar(card, style="Respawn.Horizontal.TProgressbar",
-                                       maximum=100, mode="determinate")
-            progress.pack(fill="x", padx=12, pady=(2, 9))
-            self.progress_bars[boss["id"]] = progress
-            bottom = tk.Frame(card, bg=PANEL)
-            bottom.pack(fill="x", padx=12, pady=(2, 0))
-            tk.Label(bottom, text=f"Respawn: {boss['minutes']} min", bg=PANEL,
-                     fg=MUTED, font=("Segoe UI", 9)).pack(side="left")
-            GamerButton(bottom, text="Boss morreu / Iniciar", command=lambda b=boss: self.start(b),
-                      bg=ACCENT, fg=BG, activebackground="#8ef2dc", relief="flat",
-                      cursor="hand2", font=("Segoe UI", 9, "bold"), padx=8).pack(side="right")
-            GamerButton(bottom, text="Zerar", command=lambda b=boss: self.reset(b),
-                      bg=PANEL, fg=TEXT, relief="flat", cursor="hand2",
-                      font=("Segoe UI", 9)).pack(side="right", padx=4)
-            category_select = ttk.Combobox(bottom, values=CATEGORIES, state="readonly", width=16,
-                                           font=("Segoe UI", 8))
-            category_select.set(boss.get("category", CATEGORIES[0]))
-            category_select.pack(side="right", padx=(2, 5))
-            category_select.bind("<<ComboboxSelected>>", lambda _e, b=boss, c=category_select: self.change_category(b, c.get()))
+        region_color = {MYRKHEIMR: PURPLE, FOLKVANGR: WARNING}.get(
+            boss.get("category"), ACCENT)
+        shell = tk.Frame(self.cards, bg=BORDER, highlightthickness=0)
+        shell.pack(fill="x", pady=(0, 12), padx=(18 if nested else 0, 0))
+        tk.Frame(shell, bg=region_color, width=4).pack(side="left", fill="y")
+        card = tk.Frame(shell, bg=PANEL)
+        card.pack(fill="both", expand=True, padx=(0, 1), pady=1)
+        top = tk.Frame(card, bg=PANEL)
+        top.pack(fill="x", padx=14, pady=(12, 4))
+        GamerButton(top, text="Remover", command=lambda: self.delete(boss),
+                    bg=PANEL, fg=MUTED, font=("Segoe UI", 8)).pack(side="right")
+        tk.Label(top, text=boss_location(boss).upper(), bg=PANEL, fg=region_color,
+                 font=("Segoe UI", 8, "bold")).pack(anchor="w")
+        name = tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
+                        font=("Segoe UI", 15, "bold"), anchor="w", justify="left")
+        name.pack(fill="x")
+        top.bind("<Configure>", lambda e: name.configure(wraplength=max(150, e.width - 85)))
+        mid = tk.Frame(card, bg=PANEL)
+        mid.pack(fill="x", padx=14, pady=2)
+        timer = tk.Label(mid, text="", bg=PANEL, fg=TEXT, font=("Consolas", 28, "bold"))
+        timer.pack(side="left")
+        status = tk.Label(mid, text="", bg=PANEL, fg=MUTED, font=("Segoe UI", 9, "bold"))
+        status.pack(side="left", padx=14)
+        self.time_labels[boss["id"]] = timer
+        self.status_labels[boss["id"]] = status
+        respawn = tk.Label(card, text="", bg=PANEL, fg=ACCENT,
+                           font=("Segoe UI", 9), anchor="w")
+        respawn.pack(fill="x", padx=16, pady=(0, 2))
+        self.respawn_labels[boss["id"]] = respawn
+        last = ("Última morte: " + datetime.fromtimestamp(boss["last_kill"]).strftime("%d/%m às %H:%M:%S")
+                if boss.get("last_kill") else "Última morte: ainda não registrada")
+        tk.Label(card, text=f"{last}   •   Ciclo de {boss['minutes']} min",
+                 bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(
+                     fill="x", padx=16, pady=(0, 8))
+        progress = ttk.Progressbar(card, style="Respawn.Horizontal.TProgressbar",
+                                   maximum=100, mode="determinate")
+        progress.pack(fill="x", padx=16, pady=(0, 10))
+        self.progress_bars[boss["id"]] = progress
+        bottom = tk.Frame(card, bg=PANEL)
+        bottom.pack(fill="x", padx=14, pady=(0, 12))
+        GamerButton(bottom, text="Boss morreu / Iniciar", command=lambda: self.start(boss),
+                    bg=ACCENT, fg=BG, padx=10, pady=6,
+                    font=("Segoe UI", 9, "bold")).pack(side="right")
+        GamerButton(bottom, text="Zerar", command=lambda: self.reset(boss),
+                    bg=PANEL, fg=TEXT, padx=8, pady=6,
+                    font=("Segoe UI", 9)).pack(side="right", padx=6)
+        GamerButton(bottom, text="Editar tempo", command=lambda: self.edit_respawn_dialog(boss),
+                    bg=PANEL, fg=PURPLE, padx=8, pady=6,
+                    font=("Segoe UI", 9)).pack(side="right")
+        category_select = ttk.Combobox(bottom, values=CATEGORIES, state="readonly",
+                                       width=16, font=("Segoe UI", 8))
+        category_select.set(boss.get("category", CATEGORIES[0]))
+        category_select.pack(side="left", padx=(0, 6))
+        category_select.bind("<<ComboboxSelected>>",
+                             lambda _e: self.change_category(boss, category_select.get()))
 
     def matching_respawn_copies(self, boss):
         """Cópias com mesmo nome, na mesma região, mas IDs e timers próprios."""

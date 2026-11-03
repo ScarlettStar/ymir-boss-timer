@@ -17,8 +17,23 @@ jobs:
         with:
           python-version: "3.12"
       - name: Conferir sintaxe
-        run: python -m py_compile ymir_boss_timer.py ymir_features.py ymir_theme.py
+        run: python -m py_compile ymir_boss_timer.py ymir_features.py ymir_theme.py ymir_command.py
+      - name: Instalar captura da interface de teste
+        run: python -m pip install Pillow
       - name: Executar testes de lógica e interface
         env:
           YMIR_GUI_TESTS: "1"
+          YMIR_UI_SCREENSHOT_DIR: ui-preview
         run: python -m unittest discover -s tests -v
+
+      - name: Instalar PyInstaller para regressão de reinício
+        run: python -m pip install pyinstaller
+      - name: Testar atualização entre processos onefile reais
+        run: python tests/windows_restart_smoke.py
+
+      - name: Salvar imagens da interface de teste
+        uses: actions/upload-artifact@v4
+        with:
+          name: interface-preview
+          path: ui-preview/*.png
+          if-no-files-found: error
