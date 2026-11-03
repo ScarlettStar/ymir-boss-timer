@@ -22,7 +22,7 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.1"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
@@ -363,6 +363,8 @@ $logfile = __LOGFILE__
 $expected = __EXPECTED__
 $parentId = __PARENT_ID__
 $child = $null
+# Todas as aberturas (incluindo rollback) devem extrair recursos próprios.
+$env:PYINSTALLER_RESET_ENVIRONMENT = "1"
 $swapped = $false
 function Write-UpdateLog([string]$message) {
   try {
@@ -386,6 +388,7 @@ try {
   $child = Start-Process -FilePath $target -PassThru -ErrorAction Stop
   Write-UpdateLog "Executável iniciado. Aguardando confirmação da interface."
   $readyOk = $false
+  $lastReported = ""
   # O PyInstaller --onefile pode iniciar um processo secundário: não confiar
   # no estado do PID retornado por Start-Process como prova de falha.
   for ($i = 0; $i -lt 90; $i++) {
@@ -393,6 +396,10 @@ try {
     if (Test-Path -LiteralPath $marker) {
       try {
         $written = (Get-Content -LiteralPath $marker -Raw -Encoding ASCII).Trim()
+        if ($written -ne $lastReported) {
+          Write-UpdateLog "Confirmação recebida: versão $written; esperada: $expected"
+          $lastReported = $written
+        }
         if ($written -eq $expected) {
           $readyOk = $true
           break
@@ -474,8 +481,13 @@ try {
         # utf-8-sig evita acentos corrompidos no Windows PowerShell 5.1.
         script.write_text(ps, encoding="utf-8-sig")
         try:
+            # O PowerShell sobrevive ao app e transmite este ambiente ao EXE novo.
+            # Sem reset, o bootloader pode reutilizar os recursos temporários antigos.
+            restart_env = os.environ.copy()
+            restart_env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
             subprocess.Popen(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), close_fds=True)
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), close_fds=True,
+                             env=restart_env)
             self.quit_app()
         except OSError as exc:
             self._update_failed(str(exc))

@@ -99,3 +99,12 @@ Execute `python -m unittest discover -s tests -v` e `python -m py_compile ymir_b
 Para o teste real de interface, use `YMIR_GUI_TESTS=1` em um ambiente com tela (no PowerShell: `$env:YMIR_GUI_TESTS = "1"`). O workflow **Testes do aplicativo** executa esse teste no Windows em PRs, sem publicar uma versão.
 
 Antes de distribuir, revise visualmente no Windows com sua escala de tela e confira som, notificações nativas e bandeja; esses recursos do sistema não são cobertos pelo teste de interface.
+
+
+## Versão 3.0.1 — reinício independente do atualizador
+
+O processo de atualização solicita um ambiente novo ao PyInstaller antes de abrir o EXE substituído ou restaurado. Evita reutilizar recursos temporários da instância encerrada. O log registra a versão recebida quando há confirmação, inclusive quando difere da esperada.
+
+A versão antiga já instalada continua executando seu próprio atualizador. Se ela restaurar a anterior, feche o aplicativo pela bandeja e abra o executável baixado manualmente pelo Explorer. Não remova os dados em `%APPDATA%\\YmirBossTimer`. A correção passa a proteger futuras atualizações iniciadas pela versão 3.0.1.
+
+CI: além dos testes existentes, gera uma fixture onefile Windows e executa o atualizador real entre dois processos, verificando o log de confirmação. Nenhum Release é criado por esses testes.
