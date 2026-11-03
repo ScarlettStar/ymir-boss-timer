@@ -18,9 +18,11 @@ from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
+from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
+                        BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "2.1.1"
+APP_VERSION = "3.0.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
@@ -88,15 +90,6 @@ DATA_FILE = DATA_DIR / "bosses.json"
 HISTORY_FILE = DATA_DIR / "history.json"
 UPDATE_SETTINGS = DATA_DIR / "updates.json"
 MAX_HISTORY = 1000
-BG = "#0b101d"
-PANEL = "#19263b"
-TEXT = "#edf4ff"
-MUTED = "#96a9c6"
-ACCENT = "#5ae2c0"
-WARNING = "#ffca79"
-DANGER = "#ff748e"
-BORDER = "#30425b"
-PURPLE = "#a99dff"
 
 
 def format_seconds(seconds):
@@ -110,8 +103,9 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("830x800")
-        self.minsize(680, 450)
+        self.geometry(f"{min(1020, self.winfo_screenwidth())}x"
+                      f"{min(900, self.winfo_screenheight() - 80)}")
+        self.minsize(820, 640)
         self.configure(bg=BG)
         self._channel_migrated = False
         self._floor_migrated = False
@@ -213,9 +207,9 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         def save_and_check():
             if self.save_update_repo(repo_entry.get()):
                 self.check_updates(silent=False, status_var=status)
-        tk.Button(buttons, text="Salvar e verificar", command=save_and_check, bg=ACCENT, fg=BG,
+        GamerButton(buttons, text="Salvar e verificar", command=save_and_check, bg=ACCENT, fg=BG,
                   relief="flat", padx=12, pady=10, font=("Segoe UI", 10, "bold")).pack(side="left")
-        tk.Button(buttons, text="Instalar atualização", command=lambda: self.install_update(status),
+        GamerButton(buttons, text="Instalar atualização", command=lambda: self.install_update(status),
                   bg=PANEL, fg=TEXT, relief="flat", padx=12, pady=10).pack(side="left", padx=10)
         tk.Label(win, text="A instalação exige um .exe gerado pelo GERAR_EXE.bat.",
                  bg=BG, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=18)
@@ -615,27 +609,30 @@ try {
                         foreground=TEXT, arrowcolor=ACCENT)
         style.configure("Vertical.TScrollbar", background=PANEL, troughcolor=BG,
                         bordercolor=BG, arrowcolor=ACCENT)
-        header = tk.Frame(self, bg=BG)
+        style.configure("Respawn.Horizontal.TProgressbar", troughcolor=BG,
+                        background=ACCENT, borderwidth=0, thickness=4)
+        header = tk.Frame(self, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
         header.pack(fill="x", padx=16, pady=(16, 8))
-        tk.Label(header, text="⚔  YMIR BOSS TIMER", bg=BG, fg=ACCENT,
-                 font=("Segoe UI", 23, "bold")).pack(anchor="w")
-        tk.Label(header, text=f"LEGEND OF YMIR   /   CENTRAL DE RESPAWNS   /   v{APP_VERSION}", bg=BG, fg=MUTED,
-                 font=("Segoe UI", 10)).pack(anchor="w", pady=(2, 0))
+        tk.Label(header, text="⚔  YMIR BOSS TIMER", bg=PANEL, fg=TEXT,
+                 font=("Segoe UI", 26, "bold")).pack(anchor="w", padx=18, pady=(14, 2))
+        tk.Label(header, text=f"LEGEND OF YMIR   /   CENTRAL DE RESPAWNS   /   v{APP_VERSION}", bg=PANEL, fg=ACCENT,
+                 font=("Segoe UI", 10)).pack(anchor="w", padx=20, pady=(2, 14))
+        self.build_dashboard()
         nav = tk.Frame(self, bg=BG)
         nav.pack(fill="x", padx=16, pady=(10, 2))
-        self.tab_timers = tk.Button(nav, text="  ◷  TIMERS  ", command=lambda: self.switch_tab("timers"),
+        self.tab_timers = GamerButton(nav, text="  ◷  TIMERS  ", command=lambda: self.switch_tab("timers"),
                                     bg=ACCENT, fg=BG, relief="flat", padx=15, pady=10,
                                     font=("Segoe UI", 10, "bold"), cursor="hand2")
         self.tab_timers.pack(side="left", padx=(0, 9))
-        self.tab_history = tk.Button(nav, text="  ▤  HISTÓRICO  ", command=lambda: self.switch_tab("history"),
+        self.tab_history = GamerButton(nav, text="  ▤  HISTÓRICO  ", command=lambda: self.switch_tab("history"),
                                      bg=PANEL, fg=TEXT, relief="flat", padx=15, pady=10,
                                      font=("Segoe UI", 10, "bold"), cursor="hand2")
         self.tab_history.pack(side="left")
-        self.tab_upcoming = tk.Button(nav, text="  ◷  PRÓXIMOS  ", command=lambda: self.switch_tab("upcoming"),
+        self.tab_upcoming = GamerButton(nav, text="  ◷  PRÓXIMOS  ", command=lambda: self.switch_tab("upcoming"),
                                       bg=PANEL, fg=TEXT, relief="flat", padx=12, pady=10,
                                       font=("Segoe UI", 10, "bold"), cursor="hand2")
         self.tab_upcoming.pack(side="left", padx=(9, 0))
-        tk.Button(nav, text="⬇ ATUALIZAÇÕES", command=self.updates_dialog, bg=PANEL, fg=ACCENT,
+        GamerButton(nav, text="⬇ ATUALIZAÇÕES", command=self.updates_dialog, bg=PANEL, fg=ACCENT,
                   relief="flat", padx=15, pady=10, font=("Segoe UI", 10, "bold"),
                   cursor="hand2").pack(side="right")
         self.timer_view = tk.Frame(self, bg=BG)
@@ -646,13 +643,13 @@ try {
         self.build_upcoming_ui()
         bar = tk.Frame(self.timer_view, bg=PANEL)
         bar.pack(fill="x", padx=16, pady=8, ipady=7)
-        tk.Button(bar, text="◈ Overlay gamer", command=self.toggle_overlay, bg=PURPLE,
+        GamerButton(bar, text="◈ Overlay gamer", command=self.toggle_overlay, bg=PURPLE,
                   fg=BG, relief="flat", font=("Segoe UI", 9, "bold"),
                   cursor="hand2").pack(side="right", padx=(0, 7))
-        tk.Button(bar, text="⊟ Bandeja", command=self.hide_to_tray, bg=PANEL,
+        GamerButton(bar, text="⊟ Bandeja", command=self.hide_to_tray, bg=PANEL,
                   fg=TEXT, relief="flat", font=("Segoe UI", 9),
                   cursor="hand2").pack(side="right", padx=(0, 7))
-        tk.Button(bar, text="◱ Modo compacto", command=self.open_compact, bg=ACCENT,
+        GamerButton(bar, text="◱ Modo compacto", command=self.open_compact, bg=ACCENT,
                   fg=BG, relief="flat", font=("Segoe UI", 9, "bold"),
                   cursor="hand2").pack(side="right", padx=8)
         tk.Checkbutton(bar, text="Sempre no topo", variable=self.always_on_top,
@@ -675,7 +672,7 @@ try {
         self.category_select = ttk.Combobox(form, textvariable=self.category_var, values=CATEGORIES,
                                              state="readonly", width=19, font=("Segoe UI", 9))
         self.category_select.grid(row=1, column=2, sticky="ew", padx=(0, 8), ipady=5)
-        tk.Button(form, text="+ Adicionar", command=self.add_boss, bg=ACCENT, fg=BG,
+        GamerButton(form, text="+ Adicionar", command=self.add_boss, bg=ACCENT, fg=BG,
                   activebackground="#8ef2dc", relief="flat", cursor="hand2",
                   font=("Segoe UI", 9, "bold"), padx=9).grid(row=1, column=3, ipady=6)
         form.columnconfigure(0, weight=3)
@@ -714,9 +711,9 @@ try {
         self.history_count = tk.Label(toolbar, text="", bg=BG, fg=ACCENT,
                                       font=("Segoe UI", 10, "bold"))
         self.history_count.pack(side="left")
-        tk.Button(toolbar, text="Abrir backups", command=self.open_backup_folder,
+        GamerButton(toolbar, text="Abrir backups", command=self.open_backup_folder,
                   bg=PANEL, fg=ACCENT, relief="flat", padx=8).pack(side="right", padx=(0, 8))
-        tk.Button(toolbar, text="Limpar histórico", command=self.clear_history,
+        GamerButton(toolbar, text="Limpar histórico", command=self.clear_history,
                   bg=PANEL, fg=DANGER, relief="flat", padx=12, pady=7,
                   font=("Segoe UI", 9), cursor="hand2").pack(side="right")
         container = tk.Frame(self.history_view, bg=BG)
@@ -760,7 +757,7 @@ try {
         header.pack(fill="x", padx=10, pady=(9, 5))
         tk.Label(header, text="⚔ YMIR • alertas de todas as seções", bg=BG, fg=ACCENT,
                  font=("Segoe UI", 11, "bold")).pack(side="left")
-        tk.Button(header, text="Modo completo", command=self.close_compact,
+        GamerButton(header, text="Modo completo", command=self.close_compact,
                   bg=PANEL, fg=TEXT, relief="flat", cursor="hand2",
                   font=("Segoe UI", 9)).pack(side="right")
         self.mini_canvas = tk.Canvas(mini, bg=BG, highlightthickness=0)
@@ -796,7 +793,7 @@ try {
         header.pack(fill="x", pady=(5 if nested else 8, 5),
                     padx=(indent, 7 if compact else 0))
         title = self.category_title(category, group)
-        button = tk.Button(header, text=title, command=lambda c=category: self.toggle_category(c),
+        button = GamerButton(header, text=title, command=lambda c=category: self.toggle_category(c),
                    bg=PANEL, fg=PURPLE if nested else ACCENT, anchor="w",
                    relief="flat", cursor="hand2",
                    font=("Segoe UI", 9 if compact or nested else 11, "bold"),
@@ -888,7 +885,7 @@ try {
             top.pack(fill="x", padx=9, pady=(6, 0))
             tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
                      anchor="w", font=("Segoe UI", 10, "bold")).pack(side="left", fill="x", expand=True)
-            tk.Button(top, text="Iniciar", command=lambda b=boss: self.start(b),
+            GamerButton(top, text="Iniciar", command=lambda b=boss: self.start(b),
                       bg=ACCENT, fg=BG, relief="flat", cursor="hand2",
                       font=("Segoe UI", 8, "bold")).pack(side="right")
             timer = tk.Label(row, bg=PANEL, fg=TEXT, anchor="w", font=("Consolas", 15, "bold"))
@@ -984,6 +981,7 @@ try {
         self.time_labels = {}
         self.status_labels = {}
         self.respawn_labels = {}
+        self.progress_bars = {}
         if not self.bosses:
             tk.Label(self.cards, text="Nenhum boss cadastrado.\nAdicione o primeiro acima.",
                      bg=BG, fg=MUTED, font=("Segoe UI", 11), pady=34).pack(fill="x")
@@ -992,20 +990,23 @@ try {
         self.render_compact()
 
     def make_full_card(self, boss, nested=False):
-            card = tk.Frame(self.cards, bg=PANEL)
+            card = tk.Frame(self.cards, bg=PANEL, highlightthickness=1,
+                            highlightbackground=BORDER)
             card.pack(fill="x", pady=(0, 9), ipady=9, padx=(26 if nested else 0, 0))
+            tk.Frame(card, bg=PURPLE if boss.get("category") != CATEGORIES[0] else ACCENT,
+                     height=3).pack(fill="x")
             top = tk.Frame(card, bg=PANEL)
             top.pack(fill="x", padx=12, pady=(4, 3))
             tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
                      font=("Segoe UI", 11, "bold"), anchor="w").pack(side="left", fill="x", expand=True)
-            tk.Button(top, text="Editar tempo", command=lambda b=boss: self.edit_respawn_dialog(b),
+            GamerButton(top, text="Editar tempo", command=lambda b=boss: self.edit_respawn_dialog(b),
                       bg="#34465e", fg=ACCENT, relief="flat", cursor="hand2",
                       font=("Segoe UI", 9, "bold"), padx=10, pady=3).pack(side="right", padx=(0, 7))
-            tk.Button(top, text="✕", command=lambda b=boss: self.delete(b), bg=PANEL,
+            GamerButton(top, text="✕", command=lambda b=boss: self.delete(b), bg=PANEL,
                       fg=MUTED, relief="flat", cursor="hand2").pack(side="right")
             mid = tk.Frame(card, bg=PANEL)
             mid.pack(fill="x", padx=12, pady=2)
-            timer = tk.Label(mid, text="", bg=PANEL, fg=ACCENT, font=("Consolas", 19, "bold"))
+            timer = tk.Label(mid, text="", bg=PANEL, fg=ACCENT, font=("Consolas", 27, "bold"))
             timer.pack(side="left")
             status = tk.Label(mid, text="", bg=PANEL, fg=MUTED, font=("Segoe UI", 9))
             status.pack(side="left", padx=12)
@@ -1018,14 +1019,18 @@ try {
             tk.Label(card, text=("Última morte: " + datetime.fromtimestamp(boss["last_kill"]).strftime("%d/%m às %H:%M:%S"))
                      if boss.get("last_kill") else "Última morte: ainda não registrada",
                      bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(fill="x", padx=12, pady=(0, 5))
+            progress = ttk.Progressbar(card, style="Respawn.Horizontal.TProgressbar",
+                                       maximum=100, mode="determinate")
+            progress.pack(fill="x", padx=12, pady=(2, 9))
+            self.progress_bars[boss["id"]] = progress
             bottom = tk.Frame(card, bg=PANEL)
             bottom.pack(fill="x", padx=12, pady=(2, 0))
             tk.Label(bottom, text=f"Respawn: {boss['minutes']} min", bg=PANEL,
                      fg=MUTED, font=("Segoe UI", 9)).pack(side="left")
-            tk.Button(bottom, text="Boss morreu / Iniciar", command=lambda b=boss: self.start(b),
+            GamerButton(bottom, text="Boss morreu / Iniciar", command=lambda b=boss: self.start(b),
                       bg=ACCENT, fg=BG, activebackground="#8ef2dc", relief="flat",
                       cursor="hand2", font=("Segoe UI", 9, "bold"), padx=8).pack(side="right")
-            tk.Button(bottom, text="Zerar", command=lambda b=boss: self.reset(b),
+            GamerButton(bottom, text="Zerar", command=lambda b=boss: self.reset(b),
                       bg=PANEL, fg=TEXT, relief="flat", cursor="hand2",
                       font=("Segoe UI", 9)).pack(side="right", padx=4)
             category_select = ttk.Combobox(bottom, values=CATEGORIES, state="readonly", width=16,
@@ -1149,10 +1154,10 @@ try {
             self.change_respawn_duration(boss, new_minutes, all_copies=together.get())
             win.destroy()
 
-        tk.Button(buttons, text="Salvar alterações", command=save_new_time,
+        GamerButton(buttons, text="Salvar alterações", command=save_new_time,
                   bg=ACCENT, fg=BG, relief="flat", cursor="hand2",
                   font=("Segoe UI", 10, "bold"), padx=13).pack(side="left")
-        tk.Button(buttons, text="Cancelar", command=win.destroy,
+        GamerButton(buttons, text="Cancelar", command=win.destroy,
                   bg=PANEL, fg=TEXT, relief="flat", cursor="hand2",
                   padx=10).pack(side="left", padx=10)
         win.bind("<Return>", lambda _event: save_new_time())
@@ -1233,12 +1238,15 @@ try {
 
     def refresh_times(self):
         now = time.time()
+        self.refresh_dashboard(now)
         for boss in self.bosses:
             bid = boss["id"]
             if bid not in self.time_labels:
                 continue
             end = boss.get("end", 0)
             remaining = end - now
+            if bid in self.progress_bars:
+                self.progress_bars[bid].configure(value=respawn_progress(boss, now))
             timer = self.time_labels[bid]
             status = self.status_labels[bid]
             respawn = self.respawn_labels[bid]
@@ -1317,3 +1325,4 @@ try {
 if __name__ == "__main__":
     app = BossTimerApp()
     app.mainloop()
+

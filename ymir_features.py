@@ -1,4 +1,4 @@
-"""Interface gamer v2: lista global, overlay e bandeja do Windows."""
+"""Interface gamer v3: lista global, overlay e bandeja do Windows."""
 import os
 import queue
 import threading
@@ -8,13 +8,8 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-BG = "#0b101d"
-PANEL = "#19263b"
-TEXT = "#edf4ff"
-MUTED = "#96a9c6"
-ACCENT = "#5ae2c0"
-WARNING = "#ffca79"
-PURPLE = "#a99dff"
+from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING,
+                        BORDER, PURPLE, GamerButton, dashboard_counts)
 
 
 def location(boss):
@@ -33,6 +28,29 @@ def remaining_text(seconds):
 
 
 class YmirVisualMixin:
+    def build_dashboard(self):
+        summary = tk.Frame(self, bg=BG)
+        summary.pack(fill="x", padx=16, pady=(2, 4))
+        self.dashboard_labels = []
+        for index, (title, color) in enumerate((
+            ("BOSSES CADASTRADOS", TEXT), ("TIMERS ATIVOS", PURPLE),
+            ("EM ATÉ 5 MIN", WARNING), ("DISPONÍVEIS", ACCENT),
+        )):
+            summary.columnconfigure(index, weight=1, uniform="summary")
+            tile = tk.Frame(summary, bg=PANEL, highlightbackground=BORDER,
+                            highlightthickness=1)
+            tile.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 8, 0))
+            tk.Label(tile, text=title, bg=PANEL, fg=MUTED,
+                     font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=12, pady=(10, 0))
+            value = tk.Label(tile, text="0", bg=PANEL, fg=color,
+                             font=("Consolas", 24, "bold"))
+            value.pack(anchor="w", padx=12, pady=(0, 8))
+            self.dashboard_labels.append(value)
+
+    def refresh_dashboard(self, now):
+        for label, count in zip(self.dashboard_labels, dashboard_counts(self.bosses, now)):
+            label.configure(text=str(count))
+
     def upcoming_bosses(self, now=None):
         if now is None:
             now = time.time()
@@ -106,7 +124,7 @@ class YmirVisualMixin:
         tk.Label(head, text="  ⚔  YMIR  •  PRÓXIMOS BOSSES",
                  bg="#26364e", fg=ACCENT,
                  font=("Segoe UI", 10, "bold")).pack(side="left", pady=8)
-        tk.Button(head, text="✕", bg="#26364e", fg=TEXT, relief="flat",
+        GamerButton(head, text="✕", bg="#26364e", fg=TEXT, relief="flat",
                   command=self.close_overlay, cursor="hand2", width=3).pack(side="right")
         head.bind("<ButtonPress-1>", self.overlay_drag_start)
         head.bind("<B1-Motion>", self.overlay_drag_move)
@@ -216,3 +234,4 @@ class YmirVisualMixin:
                 Path(marker).write_text(self.app_version, encoding="ascii")
             except OSError:
                 pass
+
