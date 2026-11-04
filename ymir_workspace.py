@@ -4,7 +4,7 @@ import time
 import tkinter as tk
 from tkinter import ttk, messagebox
 from ymir_theme import BG, PANEL, TEXT, MUTED, ACCENT, PURPLE, WARNING, GamerButton
-from ymir_models import (DEFAULT_PROFILE, DEFAULT_REGIONS, item_profile, add_profile,
+from ymir_models import (DEFAULT_PROFILE, DEFAULT_REGIONS, item_profile, add_profile, uses_channels, channel_region, TOMB_REGION,
                          copy_boss_definitions, observe_respawn, respawn_statistics, respawn_seconds)
 
 
@@ -30,6 +30,8 @@ class WorkspaceMixin:
     def category_choices(self):
         result = list(DEFAULT_REGIONS)
         candidates = self.profile_definition().get("regions", []) + [b.get("category", "") for b in self.profile_bosses()]
+        if any(channel_region(r) == TOMB_REGION for r in candidates) and TOMB_REGION not in candidates:
+            result.remove(TOMB_REGION)
         for region in candidates:
             if region and region not in result:
                 result.append(region)
@@ -93,7 +95,9 @@ class WorkspaceMixin:
         self._filter_options = (self.category_choices(), self._filter_options[1])
         if self._filter_window is not None and self._filter_window.winfo_exists():
             self._filter_window.destroy()
-        self.clear_filters()
+        self.collapsed.update({f"{region} • {ch}": False for region in self.category_choices()
+                               if uses_channels(region) for ch in ("CHN 1", "CHN 2")})
+        self.clear_filters(reset_channel=False)
         self.render_history()
         self.render_upcoming()
         self.refresh_overlay()
@@ -165,7 +169,8 @@ class WorkspaceMixin:
 
     def add_custom_region(self, name):
         name = name.strip()
-        if not name or len(name) > 60 or " • " in name or any(name.casefold() == r.casefold() for r in self.category_choices()):
+        if (not name or len(name) > 60 or " • " in name or any(name.casefold() == r.casefold() for r in self.category_choices())
+                or (channel_region(name) and any(channel_region(r) == channel_region(name) for r in self.category_choices()))):
             raise ValueError("Use um nome único de 1 a 60 caracteres, sem o separador •.")
         candidate = copy.deepcopy(self.profile_state)
         profile = next(p for p in candidate["profiles"] if p["id"] == self.active_profile_id())

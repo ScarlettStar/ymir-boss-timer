@@ -13,8 +13,8 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING,
 
 
 def location(boss):
-    if boss.get("category") == "Bosses Myrkheimr":
-        return "Myrkheimr • " + (boss.get("channel") or "CHN 1")
+    if uses_channels(boss.get("category")):
+        return region_label(boss["category"]) + " • " + (boss.get("channel") or "CHN 1")
     if boss.get("category") == "Bosses Fólkvangr":
         return "Fólkvangr • " + (boss.get("floor") or "P1")
     return "Universais" if boss.get("category", "Bosses Universais") == "Bosses Universais" else boss["category"]
@@ -32,9 +32,11 @@ from ymir_command import CommandCenterMixin
 
 from ymir_smart import SmartTimersMixin
 from ymir_workspace import WorkspaceMixin
+from ymir_channels import ChannelViewMixin
+from ymir_models import uses_channels, region_label
 
 
-class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin):
+class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, ChannelViewMixin):
     def build_dashboard(self):
         self.dashboard_frame = summary = tk.Frame(self.content, bg=BG)
         summary.pack(fill="x", padx=16, pady=(2, 4))

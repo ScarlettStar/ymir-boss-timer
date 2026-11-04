@@ -18,14 +18,15 @@ from datetime import datetime
 from pathlib import Path
 from ymir_updates import can_auto_install
 from ymir_models import (DEFAULT_REGIONS, item_profile, read_profiles, reconcile_profiles,
-                         atomic_json, trim_history, clean_samples, respawn_seconds)
+                         atomic_json, trim_history, clean_samples, respawn_seconds,
+                         uses_channels, channel_region, region_label, TOMB_REGION)
 import tkinter as tk
 from tkinter import ttk, messagebox
 from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.2.1"
+APP_VERSION = "3.3.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS
@@ -35,8 +36,8 @@ FOLKVANGR = "Bosses Fólkvangr"
 FLOORS = ("P1", "P2", "P3", "P4 UNIVERSAL")
 
 
-def channel_group_key(channel):
-    return f"{MYRKHEIMR} • {channel}"
+def channel_group_key(channel, category=MYRKHEIMR):
+    return f"{category} • {channel}"
 
 
 def floor_group_key(floor):
@@ -52,8 +53,8 @@ def clone_for_floor(boss, floor):
 
 def boss_location(boss):
     category = boss.get("category", CATEGORIES[0])
-    if category == MYRKHEIMR:
-        return f"Myrkheimr • {boss.get('channel') or CHANNELS[0]}"
+    if uses_channels(category):
+        return f"{region_label(category)} • {boss.get('channel') or CHANNELS[0]}"
     if category == FOLKVANGR:
         return f"Fólkvangr • {boss.get('floor') or FLOORS[0]}"
     return "Universais" if category == CATEGORIES[0] else category
@@ -150,7 +151,8 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.app_version = APP_VERSION
         self.category_headers = []
         self.collapsed = {category: False for category in self.category_choices()}
-        self.collapsed.update({channel_group_key(ch): False for ch in CHANNELS})
+        self.collapsed.update({channel_group_key(ch, region): False
+                               for region in self.category_choices() if uses_channels(region) for ch in CHANNELS})
         self.collapsed.update({floor_group_key(f): False for f in FLOORS})
         self.category_var = tk.StringVar(value=CATEGORIES[0])
         self.update_busy = False
@@ -567,6 +569,10 @@ try {
                 data = json.load(f)
             if isinstance(data, list):
                 clean = []
+                channel2_keys = {(item_profile(row), str(row.get("category") or CATEGORIES[0]).strip()[:60],
+                                  str(row.get("name", "")).strip()[:60].casefold(),
+                                  str(row.get("kind") or "Boss").strip()[:60] or "Boss")
+                                 for row in data if isinstance(row, dict) and row.get("channel") == CHANNELS[1]}
                 for x in data:
                     if not isinstance(x, dict):
                         continue
@@ -586,19 +592,22 @@ try {
                             "respawn_samples": clean_samples(x.get("respawn_samples", [])),
                             "spawn_for": float(x.get("spawn_for", 0)),
                             "myrk_variable_v1": x.get("myrk_variable_v1") is True,
-                            "channel": channel if category == MYRKHEIMR else "",
+                            "channel": channel if uses_channels(category) else "",
                             "floor": floor if category == FOLKVANGR else "",
                             "end": float(x.get("end", 0)),
                             "warned_for": float(x.get("warned_for", 0)),
                             "finished_for": float(x.get("finished_for", 0)),
                             "last_kill": float(x.get("last_kill", 0))}
-                    if category == MYRKHEIMR and not boss["myrk_variable_v1"]:
+                    if channel_region(category) == MYRKHEIMR and not boss["myrk_variable_v1"]:
                         boss["variable_respawn"] = True
                         boss["myrk_variable_v1"] = True
                         self._myrk_variable_migrated = True
                     clean.append(boss)
-                    if category == MYRKHEIMR and x.get("channel") not in CHANNELS:
-                        clean.append(clone_for_channel(boss, CHANNELS[1]))
+                    if uses_channels(category) and x.get("channel") not in CHANNELS:
+                        key = (item_profile(boss), category, name.casefold(), boss["kind"])
+                        if key not in channel2_keys:
+                            clean.append(clone_for_channel(boss, CHANNELS[1]))
+                            channel2_keys.add(key)
                         self._channel_migrated = True
                     if category == FOLKVANGR and x.get("floor") not in FLOORS:
                         for extra_floor in FLOORS[1:]:
@@ -614,7 +623,9 @@ try {
             with HISTORY_FILE.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
-                return trim_history([{**r, "profile_id": item_profile(r)} for r in data if isinstance(r, dict) and
+                return trim_history([{**r, "profile_id": item_profile(r),
+                                      "channel": ((r.get("channel") if r.get("channel") in CHANNELS else CHANNELS[0])
+                                                  if uses_channels(r.get("category")) else r.get("channel", ""))} for r in data if isinstance(r, dict) and
                         all(k in r for k in ("name", "category", "killed_at", "respawn_at"))], MAX_HISTORY)
         except (OSError, ValueError, TypeError):
             pass
@@ -668,7 +679,7 @@ try {
             name.pack(fill="x", padx=12, pady=(9, 2))
             tk.Label(name, text=r["name"], fg=TEXT, bg=row.cget("bg"),
                      font=("Segoe UI", 11, "bold"), anchor="w").pack(side="left")
-            tk.Label(name, text=(f"{r['category']} • {r.get('channel', CHANNELS[0])}" if r["category"] == MYRKHEIMR else (f"{r['category']} • {r.get('floor', FLOORS[0])}" if r["category"] == FOLKVANGR else r["category"])), fg=PURPLE, bg=row.cget("bg"),
+            tk.Label(name, text=(f"{r['category']} • {r.get('channel', CHANNELS[0])}" if uses_channels(r["category"]) else (f"{r['category']} • {r.get('floor', FLOORS[0])}" if r["category"] == FOLKVANGR else r["category"])), fg=PURPLE, bg=row.cget("bg"),
                      font=("Segoe UI", 9), anchor="e").pack(side="right")
             details = tk.Frame(row, bg=row.cget("bg"))
             details.pack(fill="x", padx=12, pady=(1, 10))
@@ -807,7 +818,7 @@ try {
         self.bind("<Configure>", self.adapt_layout, add="+")
 
     def default_respawn_for_category(self, *_):
-        myrk = self.category_var.get() == MYRKHEIMR
+        myrk = channel_region(self.category_var.get()) == MYRKHEIMR
         self.variable_respawn_var.set(myrk)
         self.variable_respawn_check.configure(state="disabled" if myrk else "normal")
 
@@ -883,6 +894,7 @@ try {
         GamerButton(header, text="Modo completo", command=self.close_compact,
                   bg=PANEL, fg=TEXT, relief="flat", cursor="hand2",
                   font=("Segoe UI", 9)).pack(side="right")
+        self.build_quick_channel_controls(mini, compact=True)
         self.mini_canvas = tk.Canvas(mini, bg=BG, highlightthickness=0)
         scrollbar = ttk.Scrollbar(mini, orient="vertical", command=self.mini_canvas.yview)
         self.mini_canvas.configure(yscrollcommand=scrollbar.set)
@@ -941,10 +953,10 @@ try {
         return f"{prefix}  {label} ({len(group)}){suffix}"
 
     def group_for_header(self, category):
-        if category.startswith(MYRKHEIMR + " • "):
-            channel = category.split(" • ")[-1]
+        region, separator, channel = category.rpartition(" • ")
+        if separator and uses_channels(region) and channel in CHANNELS:
             return [b for b in self.profile_bosses()
-                    if b.get("category") == MYRKHEIMR and b.get("channel") == channel]
+                    if b.get("category") == region and b.get("channel") == channel]
         if category.startswith(FOLKVANGR + " • "):
             floor = category.split(" • ", 1)[-1]
             return [b for b in self.profile_bosses()
@@ -955,6 +967,8 @@ try {
         make_card = self.make_compact_card if compact else self.make_full_card
         for category in self.category_choices():
             group = self.group_for_header(category)
+            if compact:
+                group = self.channel_view_bosses(group)
             if not group:
                 continue
             if not compact:
@@ -964,13 +978,15 @@ try {
             self.category_header(parent, category, group, compact=compact)
             if self.collapsed[category]:
                 continue
-            if category in (MYRKHEIMR, FOLKVANGR):
+            if uses_channels(category) or category == FOLKVANGR:
                 subgroups = (
-                    [channel_group_key(c) for c in CHANNELS] if category == MYRKHEIMR
+                    [channel_group_key(c, category) for c in CHANNELS] if uses_channels(category)
                     else [floor_group_key(f) for f in FLOORS]
                 )
                 for key in subgroups:
                     subgroup = self.group_for_header(key)
+                    if compact:
+                        subgroup = self.channel_view_bosses(subgroup)
                     if not subgroup:
                         continue
                     if not compact:
@@ -998,6 +1014,8 @@ try {
                 group = self.group_for_header(category)
                 if not button._compact_header:
                     group = self.filtered_bosses(group)
+                else:
+                    group = self.channel_view_bosses(group)
                 button.config(text=self.category_title(category, group),
                               fg=WARNING if any(0 < b.get("end", 0) - time.time() <= NEAR_RESPAWN_SECONDS
                                                 for b in group)
@@ -1013,6 +1031,7 @@ try {
         if not self.profile_bosses():
             tk.Label(self.mini_cards, text="Cadastre bosses no modo completo.",
                      bg=BG, fg=MUTED, pady=20).pack()
+        self.refresh_channel_buttons()
         self.render_sections(self.mini_cards, compact=True)
         self.refresh_compact()
 
@@ -1070,14 +1089,14 @@ try {
             return
         boss = {"id": uuid.uuid4().hex, "name": name, "minutes": minutes,
                 "category": category, "profile_id": self.active_profile_id(), "kind": kind,
-                "variable_respawn": category == MYRKHEIMR or (bool(variable_var.get()) if variable_var is not None else False),
-                "myrk_variable_v1": category == MYRKHEIMR,
+                "variable_respawn": channel_region(category) == MYRKHEIMR or (bool(variable_var.get()) if variable_var is not None else False),
+                "myrk_variable_v1": channel_region(category) == MYRKHEIMR,
                 "respawn_samples": [], "spawn_for": 0,
-                "channel": CHANNELS[0] if category == MYRKHEIMR else "",
+                "channel": CHANNELS[0] if uses_channels(category) else "",
                 "floor": FLOORS[0] if category == FOLKVANGR else "",
                 "end": 0, "warned_for": 0, "finished_for": 0, "last_kill": 0}
         self.bosses.append(boss)
-        if category == MYRKHEIMR:
+        if uses_channels(category):
             self.bosses.append(clone_for_channel(boss, CHANNELS[1]))
         elif category == FOLKVANGR:
             for floor in FLOORS[1:]:
@@ -1101,7 +1120,7 @@ try {
         boss["spawn_for"] = 0
         boss["last_kill"] = killed_at
         self.history.append({"name": boss["name"], "category": boss.get("category", CATEGORIES[0]),
-                             "channel": boss.get("channel", "") if boss.get("category") == MYRKHEIMR else "",
+                             "channel": boss.get("channel", "") if uses_channels(boss.get("category")) else "",
                              "floor": boss.get("floor", "") if boss.get("category") == FOLKVANGR else "",
                              "killed_at": killed_at, "respawn_at": boss["end"],
                              "boss_id": boss["id"], "profile_id": item_profile(boss),
@@ -1134,6 +1153,7 @@ try {
             self.render()
 
     def render(self):
+        self.refresh_channel_buttons()
         visible = self.filtered_bosses()
         self._filter_visible_ids = tuple(b["id"] for b in visible)
         self.section_heading.configure(text=f"SEUS BOSSES  •  {len(visible)} de {len(self.profile_bosses())}")
@@ -1232,7 +1252,7 @@ try {
     def matching_respawn_copies(self, boss):
         """Cópias com mesmo nome, na mesma região, mas IDs e timers próprios."""
         category = boss.get("category", CATEGORIES[0])
-        if category not in (MYRKHEIMR, FOLKVANGR):
+        if not uses_channels(category) and category != FOLKVANGR:
             return [boss]
         name = boss["name"].strip().casefold()
         return [entry for entry in self.bosses
@@ -1359,12 +1379,12 @@ try {
         if category not in self.category_choices() or boss.get("category") == category:
             return
         boss["category"] = category
-        if category == MYRKHEIMR:
+        if channel_region(category) == MYRKHEIMR:
             boss["variable_respawn"] = True
             boss["myrk_variable_v1"] = True
-        boss["channel"] = CHANNELS[0] if category == MYRKHEIMR else ""
+        boss["channel"] = CHANNELS[0] if uses_channels(category) else ""
         boss["floor"] = FLOORS[0] if category == FOLKVANGR else ""
-        if category == MYRKHEIMR:
+        if uses_channels(category):
             self.bosses.append(clone_for_channel(boss, CHANNELS[1]))
         elif category == FOLKVANGR:
             for floor in FLOORS[1:]:
