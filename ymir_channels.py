@@ -34,6 +34,10 @@ class ChannelViewMixin:
                                  font=("Segoe UI", 8 if compact else 9, "bold"))
             button.pack(side="left", padx=(0, 5))
             buttons.append((choice, button))
+        if not compact:
+            GamerButton(row, text="Copiar Túmulo → CHN 2", command=self.complete_tomb_dialog,
+                        bg=PANEL, fg=ACCENT, padx=8, pady=4,
+                        font=("Segoe UI", 9)).pack(side="right")
         self.refresh_channel_buttons()
 
     def refresh_channel_buttons(self):

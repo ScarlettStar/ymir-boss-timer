@@ -19,14 +19,14 @@ from pathlib import Path
 from ymir_updates import can_auto_install
 from ymir_models import (DEFAULT_REGIONS, item_profile, read_profiles, reconcile_profiles,
                          atomic_json, trim_history, clean_samples, respawn_seconds,
-                         uses_channels, channel_region, region_label, TOMB_REGION)
+                         uses_channels, channel_region, region_label, TOMB_REGION, missing_tomb_channel_copies)
 import tkinter as tk
 from tkinter import ttk, messagebox
 from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.3.1"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS
@@ -592,6 +592,7 @@ try {
                             "respawn_samples": clean_samples(x.get("respawn_samples", [])),
                             "spawn_for": float(x.get("spawn_for", 0)),
                             "myrk_variable_v1": x.get("myrk_variable_v1") is True,
+                            "tomb_channel_copy_v1": x.get("tomb_channel_copy_v1") is True,
                             "channel": channel if uses_channels(category) else "",
                             "floor": floor if category == FOLKVANGR else "",
                             "end": float(x.get("end", 0)),
@@ -613,6 +614,15 @@ try {
                         for extra_floor in FLOORS[1:]:
                             clean.append(clone_for_floor(boss, extra_floor))
                         self._floor_migrated = True
+                copies = missing_tomb_channel_copies(clean, unmigrated_only=True)
+                for boss in clean:
+                    if (channel_region(boss.get("category")) == TOMB_REGION and boss.get("channel") == CHANNELS[0]
+                            and not boss.get("tomb_channel_copy_v1")):
+                        boss["tomb_channel_copy_v1"] = True
+                        self._channel_migrated = True
+                if copies:
+                    clean.extend(copies)
+                    self._channel_migrated = True
                 return clean
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             pass
@@ -1091,6 +1101,7 @@ try {
                 "category": category, "profile_id": self.active_profile_id(), "kind": kind,
                 "variable_respawn": channel_region(category) == MYRKHEIMR or (bool(variable_var.get()) if variable_var is not None else False),
                 "myrk_variable_v1": channel_region(category) == MYRKHEIMR,
+                "tomb_channel_copy_v1": channel_region(category) == TOMB_REGION,
                 "respawn_samples": [], "spawn_for": 0,
                 "channel": CHANNELS[0] if uses_channels(category) else "",
                 "floor": FLOORS[0] if category == FOLKVANGR else "",
@@ -1379,6 +1390,8 @@ try {
         if category not in self.category_choices() or boss.get("category") == category:
             return
         boss["category"] = category
+        if channel_region(category) == TOMB_REGION:
+            boss["tomb_channel_copy_v1"] = True
         if channel_region(category) == MYRKHEIMR:
             boss["variable_respawn"] = True
             boss["myrk_variable_v1"] = True

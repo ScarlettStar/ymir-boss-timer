@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from ymir_theme import BG, PANEL, TEXT, MUTED, ACCENT, PURPLE, WARNING, GamerButton
 from ymir_models import (DEFAULT_PROFILE, DEFAULT_REGIONS, item_profile, add_profile, uses_channels, channel_region, TOMB_REGION,
-                         copy_boss_definitions, observe_respawn, respawn_statistics, respawn_seconds)
+                         copy_boss_definitions, observe_respawn, respawn_statistics, respawn_seconds, missing_tomb_channel_copies)
 
 
 class WorkspaceMixin:
@@ -208,6 +208,28 @@ class WorkspaceMixin:
         GamerButton(win, text="Adicionar região", command=submit, bg=ACCENT,
                     fg=BG, pady=6).pack(fill="x", padx=18)
         win.bind("<Return>", lambda _e: submit())
+
+    def complete_tomb_channel2(self):
+        copies = missing_tomb_channel_copies(self.bosses, profile_id=self.active_profile_id())
+        changed = bool(copies)
+        for boss in self.profile_bosses():
+            if (channel_region(boss.get("category")) == TOMB_REGION and boss.get("channel") == "CHN 1"
+                    and not boss.get("tomb_channel_copy_v1")):
+                boss["tomb_channel_copy_v1"] = True
+                changed = True
+        if changed:
+            self.bosses.extend(copies)
+            self.save()
+            self.render()
+            self.render_upcoming()
+            self.refresh_overlay()
+        return len(copies)
+
+    def complete_tomb_dialog(self):
+        copied = self.complete_tomb_channel2()
+        message = (f"{copied} boss(es) do Túmulo copiados para CHN 2.\nAs novas contagens estão zeradas e as médias são independentes."
+                   if copied else "Nenhuma cópia necessária: os bosses já estão no CHN 2 ou o CHN 1 está vazio.")
+        messagebox.showinfo("Túmulo • CHN 2", self.profile_identity() + "\n\n" + message, parent=self)
 
     def set_variable_respawn(self, boss, enabled):
         boss["variable_respawn"] = bool(enabled)

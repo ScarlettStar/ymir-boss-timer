@@ -104,6 +104,27 @@ def copy_boss_definitions(bosses, destination):
              "warned_for": 0, "finished_for": 0, "spawn_for": 0, "respawn_samples": []} for b in bosses]
 
 
+
+def missing_tomb_channel_copies(bosses, profile_id=None, unmigrated_only=False):
+    """Plan missing CHN 2 definitions without changing originals or existing CHN 2."""
+    def key(b):
+        return item_profile(b), b.get("name", "").strip().casefold(), b.get("kind", "Boss")
+    known = {key(b) for b in bosses if channel_region(b.get("category")) == TOMB_REGION
+             and b.get("channel") == "CHN 2"}
+    copies = []
+    for boss in bosses:
+        if (channel_region(boss.get("category")) != TOMB_REGION
+                or (boss.get("channel") or "CHN 1") != "CHN 1"
+                or (profile_id is not None and item_profile(boss) != profile_id)
+                or (unmigrated_only and boss.get("tomb_channel_copy_v1")) or key(boss) in known):
+            continue
+        copied = copy_boss_definitions([boss], item_profile(boss))[0]
+        copied.update(channel="CHN 2", tomb_channel_copy_v1=True)
+        copies.append(copied)
+        known.add(key(boss))
+    return copies
+
+
 def trim_history(history, limit):
     groups = defaultdict(list)
     for item in sorted(history, key=lambda r: float(r["killed_at"])):
