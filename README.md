@@ -189,3 +189,15 @@ O botão **Copiar Túmulo → CHN 2**, ao lado da troca rápida de canal, permit
 Os alertas de um minuto e de respawn passam a abrir **sempre** um painel flutuante no canto inferior direito, além do som. Mostra nome do boss, conta/servidor, região/canal e contagem. Avisos variáveis são identificados como previsão. Funciona com o app na bandeja ou no modo compacto; notificações nativas do Windows continuam adicionais, sem substituir o painel.
 
 Avisos simultâneos ficam no mesmo painel com rolagem; o painel fecha após 20 segundos desde o aviso mais recente ou pelo X. No Windows usa janela sem ativação para evitar tomar o foco durante o jogo. O botão **Testar aviso** permite conferir som e painel sem registrar mortes ou alterar timers.
+
+
+## Versão 3.5.0 — ferramentas para jogar
+
+- **Mini painel:** abra Overlay gamer. Redimensione pelas bordas, arraste pelo topo e ajuste a opacidade. Posição, tamanho e opacidade ficam salvos ao fechar. Clique em uma linha ou escolha um boss no seletor para usar Matei/Reapareceu. O seletor inclui bosses ainda sem timer; o painel mostra contas e servidores. Trocar canal limita a visualização sem suspender alertas globais.
+- **Atalhos:** Ctrl+Alt+O abre/fecha o painel, K registra morte, R confirma reaparecimento variável, C alterna CHN 1/2. K/R exigem seleção explícita, que é apagada ao trocar conta/canal. Em Ferramentas → Atalhos, ative os atalhos globais do Windows para usar com o jogo em foco. Se outro programa reservar uma combinação, o app informa o conflito. Atalhos e painel podem depender do modo de janela e dos privilégios do jogo.
+- **Previsão variável:** mantém média, mínimo/máximo e número de observações, acrescentando a faixa de horários do ciclo baseada nos registros e indicação de poucas amostras. A faixa observada não garante o nascimento; registre Reapareceu para alimentar a média.
+- **Alertas:** Ferramentas → Alertas permite antecedência de 0 a 60 minutos, volume do próprio app e sons Cristal/Grave/Duplo. Configure o padrão ou um boss da conta selecionada; canais têm IDs e opções independentes. Volume 0 desliga só o som. Antecedência 0 mantém o aviso no horário. Pausar conta silencia som e avisos por 30 minutos; as contagens continuam. Avisos suprimidos não são repetidos ao reativar.
+- **Backup:** Ferramentas → Backup exporta ZIP com todas as contas, bosses, timers, histórico e configurações. Restaurar valida antes de escrever, pede confirmação e cria um backup dos dados atuais. Falha de escrita tenta reverter os arquivos. Contagens restauradas usam horários originais. Backups automáticos também incluem preferences.json.
+- **Resumo:** Ferramentas → Contas/canais reúne todas as contas por região/canal/piso e atualiza as contagens a cada segundo.
+
+Atualização automática preservada.

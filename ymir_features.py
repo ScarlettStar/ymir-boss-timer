@@ -28,6 +28,7 @@ def remaining_text(seconds):
 
 
 from ymir_command import CommandCenterMixin
+from ymir_productivity import ProductivityMixin
 
 
 from ymir_smart import SmartTimersMixin
@@ -36,7 +37,7 @@ from ymir_channels import ChannelViewMixin
 from ymir_models import uses_channels, region_label
 
 
-class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, ChannelViewMixin):
+class YmirVisualMixin(ProductivityMixin, CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, ChannelViewMixin):
     def build_dashboard(self):
         self.dashboard_frame = summary = tk.Frame(self.content, bg=BG)
         summary.pack(fill="x", padx=16, pady=(2, 4))
@@ -145,10 +146,17 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, Chan
         self.overlay = win
         win.title("Ymir • Gamer overlay")
         win.configure(bg=BG)
-        win.overrideredirect(True)
-        win.geometry("395x385+80+85")
+        win.resizable(True, True)
+        win.minsize(395, 530)
+        geometry = self.preferences.get('overlay_geometry', '440x580+80+85')
+        win.geometry(geometry)
+        # Keep a saved panel reachable after disconnecting a monitor.
+        win.update_idletasks()
+        if win.winfo_x() > win.winfo_screenwidth()-80 or win.winfo_y() > win.winfo_screenheight()-80 or win.winfo_x() < -300 or win.winfo_y() < -300:
+            win.geometry('+80+85')
+        win.protocol('WM_DELETE_WINDOW', self.close_overlay)
         win.attributes("-topmost", True)
-        win.attributes("-alpha", 0.90)
+        win.attributes("-alpha", self.preferences.get("overlay_alpha", 90)/100)
         head = tk.Frame(win, bg="#26364e")
         head.pack(fill="x")
         tk.Label(head, text="  ⚔  YMIR  •  PRÓXIMOS BOSSES",
@@ -158,7 +166,7 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, Chan
                   command=self.close_overlay, cursor="hand2", width=3).pack(side="right")
         head.bind("<ButtonPress-1>", self.overlay_drag_start)
         head.bind("<B1-Motion>", self.overlay_drag_move)
-        tk.Label(win, text="Arraste pelo topo para mover",
+        tk.Label(win, text="Arraste o topo • redimensione pelas bordas • clique para selecionar",
                  bg=BG, fg=MUTED, font=("Segoe UI", 8)).pack(anchor="w", padx=12, pady=(5, 2))
         self.overlay_rows = []
         for i in range(6):
@@ -179,7 +187,19 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, Chan
                          bg=BG, fg=TEXT, highlightthickness=0, troughcolor=PANEL,
                          command=lambda value: win.attributes("-alpha", int(float(value)) / 100))
         scale.pack(side="right", fill="x", expand=True)
-        scale.set(90)
+        scale.set(self.preferences.get('overlay_alpha', 90))
+        scale.bind('<ButtonRelease-1>', lambda _e: self.save_overlay_preferences())
+        from ymir_models import item_profile
+        entries = list(self.bosses)
+        target_labels = [self.alert_identity(b) + " • " + b.get("kind", "Boss") + " [" + b["id"][:6] + "]" for b in entries]
+        selector = ttk.Combobox(win, values=target_labels, state='readonly')
+        selector.pack(fill='x', padx=10, pady=5)
+        selector.bind('<<ComboboxSelected>>', lambda _e: self.choose_quick_target(entries[selector.current()]))
+        tk.Label(win, textvariable=self.hotkey_status, bg=BG, fg=MUTED, wraplength=390, justify='left', font=('Segoe UI', 8)).pack(fill='x', padx=10)
+        actions = tk.Frame(win, bg=BG)
+        actions.pack(fill='x', padx=8, pady=6)
+        for title, action in (('Matei', 'kill'), ('Reapareceu', 'spawn'), ('Trocar canal', 'channel')):
+            GamerButton(actions, text=title, command=lambda a=action: self.quick_action(a), bg=PANEL, fg=ACCENT).pack(side='left', expand=True, fill='x', padx=2)
         self.refresh_overlay()
 
     def overlay_drag_start(self, event):
@@ -191,7 +211,14 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, Chan
             sx, sy, ox, oy = self._drag
             self.overlay.geometry(f"+{ox + event.x_root - sx}+{oy + event.y_root - sy}")
 
+    def save_overlay_preferences(self):
+        if self.overlay is not None and self.overlay.winfo_exists():
+            self.preferences['overlay_geometry'] = self.overlay.geometry()
+            self.preferences['overlay_alpha'] = round(float(self.overlay.attributes('-alpha'))*100)
+            self.save_preferences()
+
     def close_overlay(self):
+        self.save_overlay_preferences()
         if self.overlay is not None and self.overlay.winfo_exists():
             self.overlay.destroy()
         self.overlay = None
@@ -207,6 +234,11 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, Chan
                 frame.pack_forget()
                 continue
             b = bosses[index]
+            from ymir_models import item_profile
+            selected = self.__dict__.get('quick_target') == (item_profile(b), b['id'])
+            frame.configure(highlightthickness=1, highlightbackground=ACCENT if selected else PANEL)
+            for widget in (frame, name, timing):
+                widget.bind('<Button-1>', lambda _e, boss=b: self.choose_quick_target(boss))
             remain = b["end"] - now
             account = self.profile_definition(b.get("profile_id") or "default")
             server = account.get("server") or "sem servidor"
@@ -257,6 +289,10 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin, Chan
                     self.toggle_overlay()
                 else:
                     self.overlay.lift()
+            elif action.startswith('hotkey:'):
+                self.quick_action(action.split(':', 1)[1])
+            elif action.startswith('hotkey-failed:'):
+                self.hotkey_status.set('Atalho ocupado por outro programa: ' + action.split(':', 1)[1])
             elif action == "quit":
                 self.quit_app()
 

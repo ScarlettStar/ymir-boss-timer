@@ -152,7 +152,7 @@ class SmartTimersMixin:
         self.refresh_overlay()
 
     def overlay_bosses(self, now=None):
-        return sorted(self.upcoming_bosses(now, all_profiles=True), key=lambda b: not b.get("favorite", False))
+        return sorted(self.channel_view_bosses(self.upcoming_bosses(now, all_profiles=True)), key=lambda b: not b.get("favorite", False))
 
     def previous_death_dialog(self, boss):
         win = tk.Toplevel(self)

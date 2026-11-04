@@ -1,5 +1,6 @@
 """Account controls, custom catalogs and explicit respawn observations."""
 import copy
+from datetime import datetime
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -81,6 +82,7 @@ class WorkspaceMixin:
         self.refresh_account_view()
 
     def refresh_account_view(self):
+        self.quick_target = None
         self.refresh_profile_selector()
         self.collapsed.update({key: False for key in self.collapsed})
         self.collapsed.update({region: False for region in self.category_choices()})
@@ -257,8 +259,15 @@ class WorkspaceMixin:
         stats = respawn_statistics(boss)
         if stats is None:
             return f"Variável • sem observações: usa {boss['minutes']} min como referência. Confirme quando reaparecer."
+        window = ''
+        if boss.get('last_kill'):
+            start = datetime.fromtimestamp(boss['last_kill'] + stats['minimum']).strftime('%H:%M:%S')
+            end = datetime.fromtimestamp(boss['last_kill'] + stats['maximum']).strftime('%H:%M:%S')
+            window = f' • faixa observada deste ciclo {start}–{end}'
+        confidence = ' • poucas amostras' if stats['count'] < 5 else ''
         return (f"Variável • média {stats['mean'] / 60:.1f} min • {stats['count']} observações • "
-                f"mín./máx. observado {stats['minimum'] / 60:.1f}–{stats['maximum'] / 60:.1f} min")
+                f"mín./máx. observado {stats['minimum'] / 60:.1f}–{stats['maximum'] / 60:.1f} min"
+                + window + confidence + ' • estimativa, sem garantia')
 
     def confirm_respawn(self, boss, spawned_at=None):
         now = time.time()
