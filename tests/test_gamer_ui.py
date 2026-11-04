@@ -46,6 +46,21 @@ class GamerUISmokeTests(unittest.TestCase):
                         app.minutes_entry.insert(0, "10")
                         app.add_boss()
                     self.assertEqual(len(app.bosses), 9)
+                    missing = next(b for b in app.bosses if b["category"] == ymir.TOMB_REGION and b["channel"] == "CHN 2")
+                    app.bosses.remove(missing)
+                    app.render()
+                    widgets, todo = [], [app]
+                    while todo:
+                        widget = todo.pop()
+                        widgets.append(widget)
+                        todo.extend(widget.winfo_children())
+                    copier = next(w for w in widgets if isinstance(w, ymir.tk.Button)
+                                  and w.cget("text") == "Copiar Túmulo → CHN 2")
+                    with patch.object(ymir.messagebox, "showinfo"):
+                        copier.invoke()
+                        self.assertEqual(len(app.bosses), 9)
+                        copier.invoke()
+                        self.assertEqual(len(app.bosses), 9)
                     before = [(b["id"], b["end"], b["last_kill"]) for b in app.bosses]
                     app.choose_channel("CHN 1")
                     self.assertEqual(len(app.time_labels), 7)

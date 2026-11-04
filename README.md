@@ -175,3 +175,17 @@ Novos cadastros de Myrkheimr e bosses movidos para essa região entram com vari�
 - Trocar o canal não reinicia nem move timers. Alertas e overlay continuam monitorando os dois canais de todas as contas. O resumo/radar mantém a visão de todos os canais da conta selecionada. **Limpar** restaura Todos e limpa os filtros; trocar de conta mantém a escolha salva daquela conta.
 - Bosses antigos de Túmulo sem canal são preservados no CHN 1. A cópia do CHN 2 começa sem contagem e sem observações, sem inventar mortes. Se o CHN 2 já existir, ele não é duplicado. Cadastros novos criam as duas cópias.
 - O histórico identifica o canal em ambas as regiões, e edições em lote continuam limitadas à conta/região/categoria. A configuração variável de Túmulo é preservada; Myrk continua variável por padrão conforme a 3.2.1.
+
+
+## Versão 3.4.0 — completar o Túmulo e avisos visíveis
+
+A atualização completa automaticamente as cópias que faltarem do CHN 1 do Túmulo para o CHN 2, inclusive quando o cadastro já tinha o canal 1 informado. Preserva os nomes, categoria, modo de respawn e tempo manual; gera IDs novos e inicia timers/histórico/observações do CHN 2 zerados. Bosses já existentes no CHN 2 são preservados, sem duplicar ou substituir seus tempos/médias.
+
+O botão **Copiar Túmulo → CHN 2**, ao lado da troca rápida de canal, permite completar novamente os cadastros da conta selecionada. Repetir a ação não duplica bosses. A migração inicial é marcada para não recriar automaticamente uma cópia que você remover depois; o botão permite refazê-la explicitamente.
+
+
+### Avisos na tela e som
+
+Os alertas de um minuto e de respawn passam a abrir **sempre** um painel flutuante no canto inferior direito, além do som. Mostra nome do boss, conta/servidor, região/canal e contagem. Avisos variáveis são identificados como previsão. Funciona com o app na bandeja ou no modo compacto; notificações nativas do Windows continuam adicionais, sem substituir o painel.
+
+Avisos simultâneos ficam no mesmo painel com rolagem; o painel fecha após 20 segundos desde o aviso mais recente ou pelo X. No Windows usa janela sem ativação para evitar tomar o foco durante o jogo. O botão **Testar aviso** permite conferir som e painel sem registrar mortes ou alterar timers.

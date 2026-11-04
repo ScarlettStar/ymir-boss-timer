@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Conferir sintaxe
-        run: python -m py_compile ymir_boss_timer.py ymir_features.py ymir_theme.py ymir_command.py ymir_smart.py ymir_updates.py ymir_models.py ymir_workspace.py ymir_channels.py
+        run: python -m py_compile ymir_boss_timer.py ymir_features.py ymir_theme.py ymir_command.py ymir_smart.py ymir_updates.py ymir_models.py ymir_workspace.py ymir_channels.py ymir_alerts.py
       - name: Instalar captura da interface de teste
         run: python -m pip install Pillow
       - name: Executar testes de lógica e interface
