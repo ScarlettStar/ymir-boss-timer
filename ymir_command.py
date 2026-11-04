@@ -29,6 +29,7 @@ class CommandCenterMixin:
         for title, action, color in (
             ("◈  Overlay gamer", self.toggle_overlay, PURPLE),
             ("◱  Modo compacto", self.open_compact, ACCENT),
+            ("⚙  Ferramentas", self.tools_dialog, WARNING),
             ("⊟  Minimizar", self.hide_to_tray, TEXT),
         ):
             GamerButton(self.sidebar, text=title, command=action, bg=SIDEBAR,

@@ -27,7 +27,7 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.4.0"
+APP_VERSION = "3.5.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS
@@ -63,7 +63,7 @@ def boss_location(boss):
 
 def backup_data():
     """Backups locais independentes do EXE; nunca alteram os arquivos originais."""
-    files = (DATA_FILE, HISTORY_FILE, UPDATE_SETTINGS, DATA_DIR / "profiles.json")
+    files = (DATA_FILE, HISTORY_FILE, UPDATE_SETTINGS, DATA_DIR / "profiles.json", DATA_DIR / "preferences.json")
     if not any(p.exists() for p in files):
         return None
     backup_root = DATA_DIR / "backups"
@@ -165,6 +165,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
                                                if self.auto_update_enabled.get() else "Atualizações automáticas desativadas"))
         self.last_update_check = 0
         self.auto_update_idle_since = time.time()
+        self.init_productivity()
         self.build_ui()
         self.after(1400, self.init_tray)
         self.after(650, self.signal_update_ready)
@@ -1142,7 +1143,7 @@ try {
         self.history = trim_history(self.history, MAX_HISTORY)
         self.save_history()
         self.render_history()
-        boss["warned_for"] = boss["end"] if killed_at < now - 1 and boss["end"] - now <= 60 else 0
+        boss["warned_for"] = boss["end"] if killed_at < now - 1 and boss["end"] - now <= self.options_for_alert(boss)["lead_seconds"] else 0
         boss["finished_for"] = boss["end"] if boss["end"] <= now else 0
         self.alerted.discard(boss["id"])
         self.warning_alerted.discard(boss["id"])
@@ -1408,14 +1409,23 @@ try {
         self.render()
 
     def sound(self):
+        options = self.__dict__.get('_sound_options', self.options_for_alert())
+        if options['volume'] <= 0:
+            return
         try:
             import winsound
-            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            from ymir_productivity import tone_wave
+            audio = tone_wave(options['volume'], options['tone'])
+            # SND_MEMORY cannot play asynchronously; keep Tk responsive with a worker.
+            threading.Thread(target=lambda: winsound.PlaySound(audio, winsound.SND_MEMORY | winsound.SND_NODEFAULT), daemon=True).start()
         except (ImportError, RuntimeError):
             self.bell()
 
     def notify(self, boss_name, title, description, boss=None):
         """Som e painel na tela sempre; toast nativo continua como aviso adicional."""
+        if self.alert_is_muted(boss):
+            return
+        self._sound_options = self.options_for_alert(boss)
         self.sound()
         self.show_respawn_alert(boss_name, title, description, boss=boss)
         self.send_native_toast(boss_name, title, description)
@@ -1468,10 +1478,10 @@ try {
                     self.notify(self.alert_identity(boss), "Janela estimada de respawn" if boss.get("variable_respawn") else "Boss disponível!",
                                 "A previsão chegou. Confira no jogo e registre Reapareceu; a média não garante o nascimento."
                                 if boss.get("variable_respawn") else "O horário de respawn chegou.", boss=boss)
-            elif remaining <= 60 and boss.get("warned_for", 0) != end:
+            elif 0 < remaining <= self.options_for_alert(boss)["lead_seconds"] and boss.get("warned_for", 0) != end:
                 boss["warned_for"] = end
                 self.save()
-                self.notify(self.alert_identity(boss), "Previsão de respawn em 1 minuto" if boss.get("variable_respawn") else "Falta 1 minuto!",
+                self.notify(self.alert_identity(boss), "Respawn previsto em breve" if boss.get("variable_respawn") else "Boss vai nascer em breve!",
                             ("Previsão às " if boss.get("variable_respawn") else "Nasce às ") + datetime.fromtimestamp(end).strftime("%H:%M:%S"), boss=boss)
 
     def refresh_times(self):
@@ -1551,6 +1561,11 @@ try {
             self.quit_app()
 
     def quit_app(self):
+        hotkeys = self.__dict__.get('_hotkeys')
+        if hotkeys:
+            hotkeys.close()
+        if self.__dict__.get('overlay') is not None:
+            self.close_overlay()
         panel = self.__dict__.get("_alert_panel")
         if panel is not None:
             panel.close()
@@ -1566,6 +1581,8 @@ try {
             self.overlay.destroy()
         if self.compact is not None and self.compact.winfo_exists():
             self.compact.destroy()
+        for callback in self.tk.splitlist(self.tk.call("after", "info")):
+            self.after_cancel(callback)
         self.destroy()
 
 if __name__ == "__main__":
