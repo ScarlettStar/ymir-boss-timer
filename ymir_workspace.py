@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from ymir_theme import BG, PANEL, TEXT, MUTED, ACCENT, PURPLE, WARNING, GamerButton
 from ymir_models import (DEFAULT_PROFILE, DEFAULT_REGIONS, item_profile, add_profile,
-                         copy_boss_definitions, observe_respawn, respawn_statistics)
+                         copy_boss_definitions, observe_respawn, respawn_statistics, respawn_seconds)
 
 
 class WorkspaceMixin:
@@ -206,8 +206,23 @@ class WorkspaceMixin:
 
     def set_variable_respawn(self, boss, enabled):
         boss["variable_respawn"] = bool(enabled)
+        killed_at, old_end = boss.get("last_kill", 0), boss.get("end", 0)
+        if killed_at and old_end and boss.get("spawn_for") != killed_at:
+            now = time.time()
+            end = boss["end"] = killed_at + respawn_seconds(boss)
+            boss["warned_for"] = 0 if end > now else end
+            boss["finished_for"] = 0 if end > now or old_end > now else end
+            for record in reversed(self.history):
+                if (record.get("boss_id") == boss["id"] and item_profile(record) == item_profile(boss)
+                        and record["killed_at"] == killed_at):
+                    record.update(respawn_at=end, variable_respawn=boss["variable_respawn"])
+                    self.save_history()
+                    self.render_history()
+                    break
         self.save()
         self.render()
+        self.render_upcoming()
+        self.refresh_overlay()
 
     def learning_description(self, boss):
         if not boss.get("variable_respawn"):

@@ -284,3 +284,18 @@ class RespawnLearningTests(unittest.TestCase):
             app.change_respawn_duration(entry, 200)
         self.assertEqual(entry["end"], 109600)
         self.assertEqual(respawn_seconds(entry), 9600)
+
+
+    def test_switching_variable_mode_recalculates_active_prediction_without_losing_samples(self):
+        app = bare_app()
+        entry = boss(variable_respawn=True, last_kill=100000, end=106000,
+                     respawn_samples=[{"killed_at": 10000, "spawned_at": 16000}])
+        app.bosses = [entry]
+        app.history = [{"boss_id": "a", "profile_id": "default", "killed_at": 100000, "respawn_at": 106000}]
+        with patch.object(ymir.time, "time", return_value=100100):
+            app.set_variable_respawn(entry, False)
+            self.assertEqual(entry["end"], 110800)
+            self.assertEqual(app.history[0]["respawn_at"], 110800)
+            app.set_variable_respawn(entry, True)
+            self.assertEqual(entry["end"], 106000)
+        self.assertEqual(respawn_statistics(entry)["count"], 1)

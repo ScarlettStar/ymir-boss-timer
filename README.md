@@ -154,7 +154,7 @@ Use **Regiões → Adicionar região** na conta desejada. Depois cadastre os bos
 
 **Mortes sozinhas não medem respawn:** o intervalo entre duas mortes inclui o tempo em que o boss ficou vivo. O aprendizado usa exclusivamente pares morte → reaparecimento observado. Cada ciclo só pode ser confirmado uma vez. Marque a hora correta de observação para não aumentar artificialmente a média.
 
-Os avisos dos bosses variáveis são **estimativas**, não confirmação de nascimento. O intervalo mínimo/máximo é apenas o observado nos registros. Desativar Variável volta a usar a duração manual nos próximos ciclos e preserva as observações. Editar a referência não altera horários de reaparecimento já confirmados.
+Os avisos dos bosses variáveis são **estimativas**, não confirmação de nascimento. O intervalo mínimo/máximo é apenas o observado nos registros. Alternar Variável recalcula a previsão ativa a partir da última morte usando a média ou a referência manual, preservando as observações. Editar a referência não altera horários de reaparecimento já confirmados.
 
 ### Validação
 
