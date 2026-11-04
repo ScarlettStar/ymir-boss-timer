@@ -25,7 +25,7 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.2.0"
+APP_VERSION = "3.2.1"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS
@@ -114,6 +114,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.configure(bg=BG)
         self._channel_migrated = False
         self._floor_migrated = False
+        self._myrk_variable_migrated = False
         try:
             backup_data()  # Antes de qualquer migração ou gravação de dados.
         except OSError:
@@ -164,7 +165,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.build_ui()
         self.after(1400, self.init_tray)
         self.after(650, self.signal_update_ready)
-        if self._channel_migrated or self._floor_migrated:
+        if self._channel_migrated or self._floor_migrated or self._myrk_variable_migrated:
             self.save()  # Evita refazer migrações em inicializações posteriores.
         self.after(3000, lambda: self.check_updates(silent=True))
         self.render()
@@ -584,12 +585,17 @@ try {
                             "variable_respawn": x.get("variable_respawn") is True,
                             "respawn_samples": clean_samples(x.get("respawn_samples", [])),
                             "spawn_for": float(x.get("spawn_for", 0)),
+                            "myrk_variable_v1": x.get("myrk_variable_v1") is True,
                             "channel": channel if category == MYRKHEIMR else "",
                             "floor": floor if category == FOLKVANGR else "",
                             "end": float(x.get("end", 0)),
                             "warned_for": float(x.get("warned_for", 0)),
                             "finished_for": float(x.get("finished_for", 0)),
                             "last_kill": float(x.get("last_kill", 0))}
+                    if category == MYRKHEIMR and not boss["myrk_variable_v1"]:
+                        boss["variable_respawn"] = True
+                        boss["myrk_variable_v1"] = True
+                        self._myrk_variable_migrated = True
                     clean.append(boss)
                     if category == MYRKHEIMR and x.get("channel") not in CHANNELS:
                         clean.append(clone_for_channel(boss, CHANNELS[1]))
@@ -770,9 +776,11 @@ try {
         self.boss_kind_select = ttk.Combobox(extra, textvariable=self.boss_kind_var, values=self.kind_choices(), width=15)
         self.boss_kind_select.pack(side="left")
         self.variable_respawn_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(extra, text="Respawn variável (aprender média)", variable=self.variable_respawn_var,
+        self.variable_respawn_check = tk.Checkbutton(extra, text="Respawn variável (aprender média)", variable=self.variable_respawn_var,
                        bg=PANEL, fg=TEXT, selectcolor=BG, activebackground=PANEL,
-                       activeforeground=TEXT).pack(side="right")
+                       activeforeground=TEXT)
+        self.variable_respawn_check.pack(side="right")
+        self.category_var.trace_add("write", self.default_respawn_for_category)
         self.minutes_entry.bind("<Return>", lambda _e: self.add_boss())
         self.name_entry.bind("<Return>", lambda _e: self.add_boss())
         form_panel.pack_forget()
@@ -797,6 +805,11 @@ try {
                                fg=MUTED, font=("Segoe UI", 9))
         self.footer.pack(pady=(0, 12))
         self.bind("<Configure>", self.adapt_layout, add="+")
+
+    def default_respawn_for_category(self, *_):
+        myrk = self.category_var.get() == MYRKHEIMR
+        self.variable_respawn_var.set(myrk)
+        self.variable_respawn_check.configure(state="disabled" if myrk else "normal")
 
     def focus_boss_form(self):
         self.switch_tab("timers")
@@ -1057,7 +1070,8 @@ try {
             return
         boss = {"id": uuid.uuid4().hex, "name": name, "minutes": minutes,
                 "category": category, "profile_id": self.active_profile_id(), "kind": kind,
-                "variable_respawn": bool(variable_var.get()) if variable_var is not None else False,
+                "variable_respawn": category == MYRKHEIMR or (bool(variable_var.get()) if variable_var is not None else False),
+                "myrk_variable_v1": category == MYRKHEIMR,
                 "respawn_samples": [], "spawn_for": 0,
                 "channel": CHANNELS[0] if category == MYRKHEIMR else "",
                 "floor": FLOORS[0] if category == FOLKVANGR else "",
@@ -1345,6 +1359,9 @@ try {
         if category not in self.category_choices() or boss.get("category") == category:
             return
         boss["category"] = category
+        if category == MYRKHEIMR:
+            boss["variable_respawn"] = True
+            boss["myrk_variable_v1"] = True
         boss["channel"] = CHANNELS[0] if category == MYRKHEIMR else ""
         boss["floor"] = FLOORS[0] if category == FOLKVANGR else ""
         if category == MYRKHEIMR:
