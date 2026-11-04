@@ -127,3 +127,35 @@ Esta etapa depende da correção de reinício do PR #2. A CI Windows valida inte
 - Publicação automática no GitHub restaurada: alterações dos módulos na main publicam apenas versões ainda não lançadas, depois de testes e verificação da abertura do EXE. Branches e PRs não publicam.
 
 Para receber esta versão sem baixar pelo navegador: na 3.0.1, deixe marcada a opção automática em **Atualizações**, clique em **Salvar e verificar** para consultar imediatamente e mantenha o app aberto. A instalação espera os timers ativos terminarem. Cadastros, favoritos e histórico permanecem no mesmo diretório.
+
+
+## Versão 3.2.0 — contas, regiões e respawns variáveis
+
+### Duas ou mais contas
+
+No topo, use **Contas** para salvar o apelido e o servidor da conta atual ou adicionar outra conta. O seletor **Conta / Servidor** troca a tela sem apagar timers. Cadastros antigos ficam em **Conta principal** e podem ser renomeados. Não são necessárias senhas nem acesso ao jogo.
+
+Cada conta tem seus próprios bosses, canais/pisos, favoritos, regiões personalizadas, histórico e observações de respawn. É possível copiar apenas cadastros/regiões para uma nova conta; os IDs são novos, timers ficam zerados e histórico/médias não são copiados. O histórico conserva até 1000 mortes por conta.
+
+A lista, o radar e o modo compacto mostram a conta selecionada. O overlay reúne próximos bosses de todas as contas e identifica conta/servidor; os alertas continuam monitorando todas as contas, mesmo quando outra estiver selecionada. A instalação automática também aguarda os timers das outras contas terminarem.
+
+Metadados ficam em profiles.json, incluído nos backups. Bosses e histórico recebem profile_id mantendo IDs e horários legados. Um arquivo de contas inválido impede a abertura para evitar sobrescrever informações; referências órfãs são recuperadas como contas separadas.
+
+### Regiões e categorias próprias
+
+Use **Regiões → Adicionar região** na conta desejada. Depois cadastre os bosses na nova região. O campo **Categoria** do cadastro aceita valores sugeridos (Boss, Elite, Evento) ou um nome digitado. Os filtros incluem região e categoria. Myrkheimr continua criando CHN 1/2 e Fólkvangr continua criando P1–P4, com timers independentes; regiões novas recebem um cadastro por inclusão.
+
+### Média de respawn
+
+1. Marque **Respawn variável** no cadastro ou **Variável** no card de um boss existente. O tempo manual é a referência inicial.
+2. Registre **Boss morreu / Iniciar** ou **Morreu há…**.
+3. Ao ver o boss reaparecer, clique **Reapareceu**. Use 0 minutos para agora ou informe há quantos minutos o reaparecimento foi observado.
+4. A próxima morte usa a média dos últimos 20 ciclos confirmados desse boss, nessa conta e nesse canal/piso. O card mostra média, quantidade e mínimo/máximo observados.
+
+**Mortes sozinhas não medem respawn:** o intervalo entre duas mortes inclui o tempo em que o boss ficou vivo. O aprendizado usa exclusivamente pares morte → reaparecimento observado. Cada ciclo só pode ser confirmado uma vez. Marque a hora correta de observação para não aumentar artificialmente a média.
+
+Os avisos dos bosses variáveis são **estimativas**, não confirmação de nascimento. O intervalo mínimo/máximo é apenas o observado nos registros. Alternar Variável recalcula a previsão ativa a partir da última morte usando a média ou a referência manual, preservando as observações. Editar a referência não altera horários de reaparecimento já confirmados.
+
+### Validação
+
+Testes de migração, isolamento entre contas/canais/pisos, cópia sem timers/médias, histórico por conta, backup de profiles.json, regiões/categorias e aprendizado por observação. A CI Windows cobre troca de conta, diálogo de observação, criação de região, overlay de ambas as contas, persistência após reabrir e o reinício real do EXE onefile.

@@ -101,6 +101,8 @@ class GamerUISmokeTests(unittest.TestCase):
                     self.assertEqual(app.target_timer.cget("text"), "--:--")
                     app.focus_boss_form()
                     app.update_idletasks()
+                    app.toggle_boss_form()
+                    app.update_idletasks()
                     for width, height in ((820, 640), (min(1180, app.winfo_screenwidth() - 20),
                                                         min(850, app.winfo_screenheight() - 80))):
                         app.geometry(f"{width}x{height}+5+5")
@@ -108,7 +110,6 @@ class GamerUISmokeTests(unittest.TestCase):
                         self.assertGreater(app.canvas.winfo_height(), 35)
                         self.assertLessEqual(app.sidebar.winfo_width(), 180)
                         self.assertGreater(app.content.winfo_width(), 600)
-                    app.toggle_boss_form()
                     app.update()
                     self.assertFalse(app.form_panel.winfo_ismapped())
                     self.assertGreater(app.canvas.winfo_height(), 180)
