@@ -60,7 +60,7 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin):
 
         total, active, soon, ready = dashboard_counts(self.profile_bosses(), now)
         self.compact_summary.configure(
-            text=f"{total} bosses   /   {active} ativos   /   {soon} em até 5 min   /   {ready} disponíveis")
+            text=f"{total} bosses   /   {active} ativos   /   {soon} em até 5 min   /   {ready} prontos/previstos")
         targets = self.upcoming_bosses(now)
         if not targets:
             self.target_name.configure(text="Nenhum respawn em andamento")

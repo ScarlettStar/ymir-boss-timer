@@ -942,6 +942,8 @@ try {
         make_card = self.make_compact_card if compact else self.make_full_card
         for category in self.category_choices():
             group = self.group_for_header(category)
+            if not group:
+                continue
             if not compact:
                 group = self.filtered_bosses(group)
                 if self.filters_active() and not group:
@@ -956,6 +958,8 @@ try {
                 )
                 for key in subgroups:
                     subgroup = self.group_for_header(key)
+                    if not subgroup:
+                        continue
                     if not compact:
                         subgroup = self.filtered_bosses(subgroup)
                         if self.filters_active() and not subgroup:

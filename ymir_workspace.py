@@ -80,6 +80,7 @@ class WorkspaceMixin:
 
     def refresh_account_view(self):
         self.refresh_profile_selector()
+        self.collapsed.update({key: False for key in self.collapsed})
         self.collapsed.update({region: False for region in self.category_choices()})
         self.category_select.configure(values=self.category_choices())
         self.category_var.set(self.category_choices()[0])
