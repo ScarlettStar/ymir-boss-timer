@@ -117,7 +117,7 @@ class ProductivityTests(unittest.TestCase):
             loaded = read_backup(path)
             restore_files(folder, loaded)
             for name, value in values.items():
-                self.assertEqual(json.loads((folder/name).read_text()), value)
+                self.assertEqual(json.loads((folder/name).read_text(encoding="utf-8")), value)
 
     def test_invalid_backups_are_rejected_before_live_write(self):
         changes = [lambda v: v['bosses.json'][0].update(minutes=0),

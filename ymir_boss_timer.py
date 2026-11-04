@@ -1581,6 +1581,8 @@ try {
             self.overlay.destroy()
         if self.compact is not None and self.compact.winfo_exists():
             self.compact.destroy()
+        for callback in self.tk.splitlist(self.tk.call("after", "info")):
+            self.after_cancel(callback)
         self.destroy()
 
 if __name__ == "__main__":
