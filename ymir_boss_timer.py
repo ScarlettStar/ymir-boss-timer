@@ -17,6 +17,7 @@ from ymir_features import YmirVisualMixin, location as boss_location
 from datetime import datetime
 from pathlib import Path
 from ymir_updates import can_auto_install
+from ymir_alerts import BossAlertPanel
 from ymir_models import (DEFAULT_REGIONS, item_profile, read_profiles, reconcile_profiles,
                          atomic_json, trim_history, clean_samples, respawn_seconds,
                          uses_channels, channel_region, region_label, TOMB_REGION, missing_tomb_channel_copies)
@@ -26,7 +27,7 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.3.1"
+APP_VERSION = "3.4.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS
@@ -763,8 +764,9 @@ try {
                        command=self.update_topmost, bg=PANEL, fg=TEXT, selectcolor=BG,
                        activebackground=PANEL, activeforeground=TEXT,
                        font=("Segoe UI", 9)).pack(side="left", padx=8)
-        tk.Label(bar, text="🔔 Aviso: 1 min", bg=PANEL, fg=TEXT,
-                 font=("Segoe UI", 9)).pack(side="left", padx=(4, 3))
+        GamerButton(bar, text="🔔 Testar aviso", command=self.test_respawn_alert,
+                    bg=PANEL, fg=WARNING, padx=8, pady=4,
+                    font=("Segoe UI", 9)).pack(side="left", padx=(4, 3))
         self.form_panel = form_panel = tk.Frame(self.timer_view, bg=PANEL, highlightbackground=BORDER,
                               highlightthickness=1)
         form_panel.pack(fill="x", padx=16, pady=(6, 8))
@@ -1412,38 +1414,44 @@ try {
         except (ImportError, RuntimeError):
             self.bell()
 
-    def notify(self, boss_name, title, description):
-        """Aviso sonoro + toast nativo Windows; popup como alternativa."""
+    def notify(self, boss_name, title, description, boss=None):
+        """Som e painel na tela sempre; toast nativo continua como aviso adicional."""
         self.sound()
-        toast_ok = False
+        self.show_respawn_alert(boss_name, title, description, boss=boss)
+        self.send_native_toast(boss_name, title, description)
+
+    def send_native_toast(self, boss_name, title, description):
         if os.name == "nt":
             try:
-                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                    "YmirBossTimer.LegendOfYmir")
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("YmirBossTimer.LegendOfYmir")
                 from winotify import Notification
                 toast = Notification(app_id="Ymir Boss Timer", title=title,
                                      msg=f"{boss_name}\n{description}", duration="short")
                 toast.show()
-                toast_ok = True
+                return True
             except Exception:
-                toast_ok = False
-        if toast_ok:
-            return
-        popup = tk.Toplevel(self)
-        popup.title(title)
-        popup.configure(bg=PANEL)
-        popup.resizable(False, False)
-        popup.attributes("-topmost", True)
-        popup.geometry("370x130")
-        popup.update_idletasks()
-        screen_width = popup.winfo_screenwidth()
-        screen_height = popup.winfo_screenheight()
-        popup.geometry(f"+{max(0, screen_width - 390)}+{max(0, screen_height - 210)}")
-        tk.Label(popup, text=title, fg=ACCENT, bg=PANEL,
-                 font=("Segoe UI", 12, "bold"), wraplength=340).pack(pady=(13, 5))
-        tk.Label(popup, text=f"{boss_name}\n{description}", fg=TEXT, bg=PANEL,
-                 font=("Segoe UI", 10), wraplength=340).pack()
-        popup.after(12000, lambda: popup.destroy() if popup.winfo_exists() else None)
+                pass
+        return False
+
+    def show_respawn_alert(self, identity, title, description, boss=None):
+        panel = self.__dict__.get("_alert_panel")
+        if panel is None:
+            panel = self._alert_panel = BossAlertPanel(self)
+        deadline = boss.get("end", 0) if boss else 0
+        key = (item_profile(boss), boss["id"], deadline) if boss else (identity, title)
+        context = self.profile_identity(boss) + " • " + boss_location(boss) if boss else identity
+        panel.push({"key": key, "boss_name": boss["name"] if boss else identity,
+                    "context": context, "title": title, "description": description,
+                    "deadline": deadline, "variable": bool(boss and boss.get("variable_respawn")
+                                                            and boss.get("spawn_for") != boss.get("last_kill"))})
+
+    def test_respawn_alert(self):
+        entries = self.profile_bosses()
+        example = {**entries[0]} if entries else {"name": "Boss de exemplo", "category": CATEGORIES[0],
+                                                 "profile_id": self.active_profile_id(), "id": "example"}
+        example.update(id="alert-preview", end=time.time() + 60)
+        self.notify(self.alert_identity(example), "TESTE • Falta 1 minuto!",
+                    "Este é um teste de som e aviso na tela. Nenhum timer foi alterado.", boss=example)
 
     def check_alerts(self):
         """Percorre TODOS os bosses sem depender das seções visíveis."""
@@ -1459,12 +1467,12 @@ try {
                     self.save()
                     self.notify(self.alert_identity(boss), "Janela estimada de respawn" if boss.get("variable_respawn") else "Boss disponível!",
                                 "A previsão chegou. Confira no jogo e registre Reapareceu; a média não garante o nascimento."
-                                if boss.get("variable_respawn") else "O horário de respawn chegou.")
+                                if boss.get("variable_respawn") else "O horário de respawn chegou.", boss=boss)
             elif remaining <= 60 and boss.get("warned_for", 0) != end:
                 boss["warned_for"] = end
                 self.save()
                 self.notify(self.alert_identity(boss), "Previsão de respawn em 1 minuto" if boss.get("variable_respawn") else "Falta 1 minuto!",
-                            ("Previsão às " if boss.get("variable_respawn") else "Nasce às ") + datetime.fromtimestamp(end).strftime("%H:%M:%S"))
+                            ("Previsão às " if boss.get("variable_respawn") else "Nasce às ") + datetime.fromtimestamp(end).strftime("%H:%M:%S"), boss=boss)
 
     def refresh_times(self):
         now = time.time()
@@ -1543,6 +1551,9 @@ try {
             self.quit_app()
 
     def quit_app(self):
+        panel = self.__dict__.get("_alert_panel")
+        if panel is not None:
+            panel.close()
         self.save()
         self.save_history()
         if self.tray_icon is not None:
