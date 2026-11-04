@@ -3,11 +3,35 @@ import copy
 import json
 import math
 import uuid
+import unicodedata
 from collections import defaultdict
 
 DEFAULT_PROFILE = "default"
-DEFAULT_REGIONS = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
+TOMB_REGION = "Túmulo do Rei"
+DEFAULT_REGIONS = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr", TOMB_REGION)
 MAX_SAMPLE_SECONDS = 10080 * 60
+
+
+
+def channel_region(category):
+    key = "".join(c for c in unicodedata.normalize("NFKD", str(category or "").casefold())
+                  if not unicodedata.combining(c)).strip()
+    if key.startswith("bosses "):
+        key = key[7:].strip()
+    if key == "myrkheimr":
+        return "Bosses Myrkheimr"
+    if key == "tumulo do rei":
+        return TOMB_REGION
+    return None
+
+
+def uses_channels(category):
+    return channel_region(category) is not None
+
+
+def region_label(category):
+    value = str(category)
+    return value[7:] if value.casefold().startswith("bosses ") else value
 
 
 def item_profile(item):

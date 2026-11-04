@@ -166,3 +166,12 @@ Testes de migração, isolamento entre contas/canais/pisos, cópia sem timers/m�
 Todos os bosses de Myrkheimr já cadastrados em todas as contas e em CHN 1/2 recebem Respawn variável uma única vez. A migração preserva IDs, horários em andamento, duração manual, histórico e observações. As médias passam a valer nos próximos registros de morte; contagens já iniciadas mantêm a previsão original. A marca de migração é salva para não repetir a alteração a cada abertura.
 
 Novos cadastros de Myrkheimr e bosses movidos para essa região entram com variável ativado. No cadastro, a opção é marcada automaticamente ao selecionar Myrkheimr. As outras regiões mantêm seu comportamento. O aprendizado continua dependendo de confirmar **Reapareceu**; nenhuma média é inventada a partir de mortes isoladas. A duração manual é usada enquanto não houver observações.
+
+
+## Versão 3.3.0 — troca rápida de canais
+
+- **Myrkheimr** e **Túmulo do Rei** têm CHN 1 e CHN 2, com IDs, timers, mortes e médias independentes por conta. Túmulo do Rei agora também faz parte das regiões padrão. Nomes já usados como Tumulo do Rei ou Bosses Túmulo do Rei são reconhecidos sem mudar IDs ou nomes cadastrados.
+- Acima da lista, use **Todos | CHN 1 | CHN 2**. A escolha afeta apenas a visualização de Myrk/Túmulo; Universais, Fólkvangr e outras regiões continuam visíveis. A escolha fica salva por conta e também está disponível no modo compacto.
+- Trocar o canal não reinicia nem move timers. Alertas e overlay continuam monitorando os dois canais de todas as contas. O resumo/radar mantém a visão de todos os canais da conta selecionada. **Limpar** restaura Todos e limpa os filtros; trocar de conta mantém a escolha salva daquela conta.
+- Bosses antigos de Túmulo sem canal são preservados no CHN 1. A cópia do CHN 2 começa sem contagem e sem observações, sem inventar mortes. Se o CHN 2 já existir, ele não é duplicado. Cadastros novos criam as duas cópias.
+- O histórico identifica o canal em ambas as regiões, e edições em lote continuam limitadas à conta/região/categoria. A configuração variável de Túmulo é preservada; Myrk continua variável por padrão conforme a 3.2.1.

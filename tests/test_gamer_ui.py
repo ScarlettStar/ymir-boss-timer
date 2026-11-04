@@ -45,7 +45,20 @@ class GamerUISmokeTests(unittest.TestCase):
                         app.name_entry.insert(0, "Boss de teste")
                         app.minutes_entry.insert(0, "10")
                         app.add_boss()
-                    self.assertEqual(len(app.bosses), 7)
+                    self.assertEqual(len(app.bosses), 9)
+                    before = [(b["id"], b["end"], b["last_kill"]) for b in app.bosses]
+                    app.choose_channel("CHN 1")
+                    self.assertEqual(len(app.time_labels), 7)
+                    self.assertTrue(all(not ymir.uses_channels(b["category"]) or b["channel"] == "CHN 1"
+                                        for b in app.filtered_bosses()))
+                    app.open_compact()
+                    self.assertEqual(len(app.compact_labels), 7)
+                    app.choose_channel("CHN 2")
+                    self.assertEqual(len(app.compact_labels), 7)
+                    app.close_compact()
+                    app.clear_filters()
+                    self.assertEqual(len(app.time_labels), 9)
+                    self.assertEqual(before, [(b["id"], b["end"], b["last_kill"]) for b in app.bosses])
                     boss = app.bosses[0]
                     app.start(boss)
                     self.assertEqual(app.target_name.cget("text"), boss["name"])

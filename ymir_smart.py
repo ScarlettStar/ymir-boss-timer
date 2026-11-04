@@ -70,6 +70,7 @@ class SmartTimersMixin:
         GamerButton(bar, text="Limpar", command=self.clear_filters, bg=BG,
                     fg=MUTED, padx=8, pady=4).pack(side="left", padx=(5, 0))
         self.search_query.trace_add("write", self.queue_filter_refresh)
+        self.build_quick_channel_controls(self.timer_view)
 
     def queue_filter_refresh(self, *_):
         if self._filter_after is not None:
@@ -79,19 +80,25 @@ class SmartTimersMixin:
     def filtered_bosses(self, bosses=None, now=None):
         values = self.__dict__
         if "search_query" not in values:
-            return list(self.profile_bosses() if bosses is None else bosses)
-        return select_bosses(self.profile_bosses() if bosses is None else bosses,
+            return self.channel_view_bosses(self.profile_bosses() if bosses is None else bosses)
+        return self.channel_view_bosses(select_bosses(self.profile_bosses() if bosses is None else bosses,
                              time.time() if now is None else now,
                              self.search_query.get(), self.filter_region.get(), self.filter_place.get(),
-                             self.filter_status.get(), self.favorites_only.get(), self.filter_kind.get())
+                             self.filter_status.get(), self.favorites_only.get(), self.filter_kind.get()))
 
     def filters_active(self):
         return "search_query" in self.__dict__ and bool(
             self.search_query.get().strip() or self.filter_region.get() != "Todas"
             or self.filter_place.get() != "Todos" or self.filter_status.get() != "Todos"
-            or self.filter_kind.get() != "Todas" or self.favorites_only.get())
+            or self.filter_kind.get() != "Todas" or self.favorites_only.get() or self.current_channel_view() != "Todos")
 
     def apply_filters(self):
+        if (self.filter_place.get() in ("CHN 1", "CHN 2") and self.current_channel_view() != "Todos"
+                and self.filter_place.get() != self.current_channel_view()):
+            try:
+                self.write_channel_preference("Todos")
+            except OSError as exc:
+                messagebox.showerror("Canal não alterado", str(exc), parent=self)
         if self._filter_after is not None:
             self.after_cancel(self._filter_after)
             self._filter_after = None
@@ -101,13 +108,18 @@ class SmartTimersMixin:
         self.render()
         self.canvas.yview_moveto(0)
 
-    def clear_filters(self):
+    def clear_filters(self, reset_channel=True):
         self.search_query.set("")
         self.filter_region.set("Todas")
         self.filter_place.set("Todos")
         self.filter_status.set("Todos")
         self.filter_kind.set("Todas")
         self.favorites_only.set(False)
+        if reset_channel:
+            try:
+                self.write_channel_preference("Todos")
+            except OSError as exc:
+                messagebox.showerror("Canal não alterado", str(exc), parent=self)
         self.apply_filters()
 
     def filters_dialog(self):
