@@ -122,6 +122,10 @@ def validate_backup(values):
         if (not isinstance(h, dict) or type(h.get('killed_at')) not in (int, float)
                 or not math.isfinite(h['killed_at']) or not all(k in h for k in ('name', 'category', 'respawn_at')) or type(h.get('respawn_at')) not in (int, float) or not math.isfinite(h['respawn_at']) or not 0 <= h['killed_at'] <= 4102444800 or not 0 <= h['respawn_at'] <= 4102444800 or item_profile(h) not in ids):
             raise ValueError('Histórico inválido no backup.')
+        if h.get('observed_respawn_at') is not None:
+            value = h['observed_respawn_at']
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 4102444800:
+                raise ValueError('Horário observado inválido no histórico.')
     for name in ('updates.json', 'preferences.json'):
         if name in values and not isinstance(values[name], dict):
             raise ValueError('Configurações inválidas no backup.')
@@ -292,6 +296,7 @@ class ProductivityMixin:
         self.build_account_summary(summary)
 
     def build_alert_settings(self, parent):
+        pid = self.active_profile_id()
         entries = self.profile_bosses()
         labels = ['Padrão para todos'] + [f'{b["name"]} • {b.get("channel") or b.get("floor") or b.get("category")} • {b.get("kind", "Boss")} [{b["id"][:6]}]' for b in entries]
         choice = ttk.Combobox(parent, values=labels, state='readonly')
@@ -329,13 +334,17 @@ class ProductivityMixin:
                 self.preferences['boss_alerts'].pop(alert_key(target()), None)
                 self.save_preferences()
                 load()
+        def preview():
+            self._sound_options = dict(volume=volume.get(), tone=tone.get())
+            self.sound()
+        GamerButton(parent, text='Ouvir som escolhido', command=preview, bg=PANEL, fg=WARNING).pack(fill='x', padx=16, pady=4)
         GamerButton(parent, text='Salvar alerta', command=apply, bg=PANEL, fg=ACCENT).pack(fill='x', padx=16, pady=8)
         GamerButton(parent, text='Usar padrão neste boss', command=inherit, bg=PANEL, fg=TEXT).pack(fill='x', padx=16, pady=4)
         def mute(minutes):
-            self.preferences['muted_until'][self.active_profile_id()] = time.time() + minutes*60 if minutes else 0
+            self.preferences['muted_until'][pid] = time.time() + minutes*60 if minutes else 0
             self.save_preferences()
             muted_status.set('Conta silenciada por 30 min (som e avisos).' if minutes else 'Alertas da conta reativados.')
-        muted_status = tk.StringVar(value='Conta silenciada.' if self.preferences['muted_until'].get(self.active_profile_id(), 0) > time.time() else 'Alertas da conta ativos.')
+        muted_status = tk.StringVar(value='Conta silenciada.' if self.preferences['muted_until'].get(pid, 0) > time.time() else 'Alertas da conta ativos.')
         tk.Label(parent, text=self.profile_identity(), bg=BG, fg=MUTED).pack(pady=(10, 2))
         row = tk.Frame(parent, bg=BG)
         row.pack()
