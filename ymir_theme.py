@@ -1,5 +1,6 @@
 """Shared presentation helpers; no changes to timer data or update settings."""
 import tkinter as tk
+from ymir_models import respawn_seconds
 
 BG = "#090d18"
 PANEL = "#141e32"
@@ -39,5 +40,5 @@ def respawn_progress(boss, now):
     end = boss.get("end", 0)
     if not end:
         return 0
-    duration = max(1, boss.get("minutes", 1) * 60)
+    duration = max(1, respawn_seconds(boss))
     return max(0, min(100, 100 * (1 - (end - now) / duration)))

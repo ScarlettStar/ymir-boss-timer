@@ -11,15 +11,17 @@ def normalized(value):
                    if not unicodedata.combining(c))
 
 
-def select_bosses(bosses, now, query="", region="Todas", place="Todos", status="Todos", favorites=False):
+def select_bosses(bosses, now, query="", region="Todas", place="Todos", status="Todos", favorites=False, kind="Todas"):
     result = []
     for boss in bosses:
-        haystack = normalized(" ".join(str(boss.get(k, "")) for k in ("name", "category", "channel", "floor")))
+        haystack = normalized(" ".join(str(boss.get(k, "")) for k in ("name", "category", "channel", "floor", "kind")))
         if any(word not in haystack for word in normalized(query).split()):
             continue
         if region != "Todas" and boss.get("category") != region:
             continue
         if place != "Todos" and place not in (boss.get("channel"), boss.get("floor")):
+            continue
+        if kind != "Todas" and boss.get("kind", "Boss") != kind:
             continue
         if favorites and not boss.get("favorite", False):
             continue
@@ -49,6 +51,7 @@ class SmartTimersMixin:
         self.filter_region = tk.StringVar(value="Todas")
         self.filter_place = tk.StringVar(value="Todos")
         self.filter_status = tk.StringVar(value="Todos")
+        self.filter_kind = tk.StringVar(value="Todas")
         self.favorites_only = tk.BooleanVar(value=False)
         self._filter_options = (categories, places)
         self._filter_after = None
@@ -76,17 +79,17 @@ class SmartTimersMixin:
     def filtered_bosses(self, bosses=None, now=None):
         values = self.__dict__
         if "search_query" not in values:
-            return list(self.bosses if bosses is None else bosses)
-        return select_bosses(self.bosses if bosses is None else bosses,
+            return list(self.profile_bosses() if bosses is None else bosses)
+        return select_bosses(self.profile_bosses() if bosses is None else bosses,
                              time.time() if now is None else now,
                              self.search_query.get(), self.filter_region.get(), self.filter_place.get(),
-                             self.filter_status.get(), self.favorites_only.get())
+                             self.filter_status.get(), self.favorites_only.get(), self.filter_kind.get())
 
     def filters_active(self):
         return "search_query" in self.__dict__ and bool(
             self.search_query.get().strip() or self.filter_region.get() != "Todas"
             or self.filter_place.get() != "Todos" or self.filter_status.get() != "Todos"
-            or self.favorites_only.get())
+            or self.filter_kind.get() != "Todas" or self.favorites_only.get())
 
     def apply_filters(self):
         if self._filter_after is not None:
@@ -103,6 +106,7 @@ class SmartTimersMixin:
         self.filter_region.set("Todas")
         self.filter_place.set("Todos")
         self.filter_status.set("Todos")
+        self.filter_kind.set("Todas")
         self.favorites_only.set(False)
         self.apply_filters()
 
@@ -113,12 +117,13 @@ class SmartTimersMixin:
         win = self._filter_window = tk.Toplevel(self)
         win.title("Filtrar bosses")
         win.configure(bg=BG)
-        win.geometry("370x285")
+        win.geometry("370x350")
         win.transient(self)
         categories, places = self._filter_options
         for title, variable, choices in (
             ("Região", self.filter_region, ("Todas", *categories)),
             ("Canal / piso", self.filter_place, ("Todos", *places)),
+            ("Categoria", self.filter_kind, ("Todas", *self.kind_choices())),
             ("Status", self.filter_status, ("Todos", "Ativos", "Disponíveis", "Aguardando", "Em até 5 min")),
         ):
             tk.Label(win, text=title, bg=BG, fg=MUTED).pack(anchor="w", padx=18, pady=(10, 3))
@@ -135,7 +140,7 @@ class SmartTimersMixin:
         self.refresh_overlay()
 
     def overlay_bosses(self, now=None):
-        return sorted(self.upcoming_bosses(now), key=lambda b: not b.get("favorite", False))
+        return sorted(self.upcoming_bosses(now, all_profiles=True), key=lambda b: not b.get("favorite", False))
 
     def previous_death_dialog(self, boss):
         win = tk.Toplevel(self)

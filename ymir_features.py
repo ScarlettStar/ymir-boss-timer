@@ -17,7 +17,7 @@ def location(boss):
         return "Myrkheimr • " + (boss.get("channel") or "CHN 1")
     if boss.get("category") == "Bosses Fólkvangr":
         return "Fólkvangr • " + (boss.get("floor") or "P1")
-    return "Universais"
+    return "Universais" if boss.get("category", "Bosses Universais") == "Bosses Universais" else boss["category"]
 
 
 def remaining_text(seconds):
@@ -31,16 +31,17 @@ from ymir_command import CommandCenterMixin
 
 
 from ymir_smart import SmartTimersMixin
+from ymir_workspace import WorkspaceMixin
 
 
-class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin):
+class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin, WorkspaceMixin):
     def build_dashboard(self):
         self.dashboard_frame = summary = tk.Frame(self.content, bg=BG)
         summary.pack(fill="x", padx=16, pady=(2, 4))
         self.dashboard_labels = []
         for index, (title, color) in enumerate((
             ("CADASTRADOS", TEXT), ("TIMERS ATIVOS", PURPLE),
-            ("EM ATÉ 5 MIN", WARNING), ("DISPONÍVEIS", ACCENT),
+            ("EM ATÉ 5 MIN", WARNING), ("PRONTOS / PREVISTOS", ACCENT),
         )):
             summary.columnconfigure(index, weight=1, uniform="summary")
             tile = tk.Frame(summary, bg=PANEL, highlightbackground=BORDER,
@@ -54,10 +55,10 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin):
             self.dashboard_labels.append(value)
 
     def refresh_dashboard(self, now):
-        for label, count in zip(self.dashboard_labels, dashboard_counts(self.bosses, now)):
+        for label, count in zip(self.dashboard_labels, dashboard_counts(self.profile_bosses(), now)):
             label.configure(text=str(count))
 
-        total, active, soon, ready = dashboard_counts(self.bosses, now)
+        total, active, soon, ready = dashboard_counts(self.profile_bosses(), now)
         self.compact_summary.configure(
             text=f"{total} bosses   /   {active} ativos   /   {soon} em até 5 min   /   {ready} disponíveis")
         targets = self.upcoming_bosses(now)
@@ -73,13 +74,15 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin):
         self.target_name.configure(text=boss["name"])
         self.target_location.configure(text=location(boss))
         self.target_timer.configure(text="00:00" if remain <= 0 else remaining_text(remain), fg=color)
-        self.target_state.configure(text="DISPONÍVEL" if remain <= 0 else "ATÉ O RESPAWN", fg=color)
+        uncertain = boss.get("variable_respawn") and boss.get("spawn_for") != boss.get("last_kill")
+        self.target_state.configure(text=("PREVISÃO / CONFIRA" if uncertain else "DISPONÍVEL") if remain <= 0
+                                    else ("RESPAWN ESTIMADO" if uncertain else "ATÉ O RESPAWN"), fg=color)
 
-    def upcoming_bosses(self, now=None):
+    def upcoming_bosses(self, now=None, all_profiles=False):
         if now is None:
             now = time.time()
-        upcoming = [b for b in self.bosses if b.get("end", 0) > now]
-        ready = [b for b in self.bosses if 0 < b.get("end", 0) <= now]
+        upcoming = [b for b in self.profile_bosses(all_profiles) if b.get("end", 0) > now]
+        ready = [b for b in self.profile_bosses(all_profiles) if 0 < b.get("end", 0) <= now]
         return sorted(upcoming, key=lambda b: b["end"]) + sorted(
             ready, key=lambda b: b["end"], reverse=True)
 
@@ -124,7 +127,8 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin):
             self.upcoming_table.delete(iid)
         for b in self.upcoming_bosses(now):
             remain = b["end"] - now
-            text = "DISPONÍVEL" if remain <= 0 else remaining_text(remain)
+            uncertain = b.get("variable_respawn") and b.get("spawn_for") != b.get("last_kill")
+            text = ("PREVISÃO" if uncertain else "DISPONÍVEL") if remain <= 0 else (("~" if uncertain else "") + remaining_text(remain))
             tag = "ready" if remain <= 0 else ("soon" if remain <= 60 else "")
             self.upcoming_table.insert("", "end", values=(
                 b["name"], location(b), text,
@@ -202,8 +206,11 @@ class YmirVisualMixin(CommandCenterMixin, SmartTimersMixin):
                 continue
             b = bosses[index]
             remain = b["end"] - now
-            name.config(text=f"{'★ ' if b.get('favorite') else ''}{b['name'][:27]}\n{location(b)}")
-            timing.config(text="PRONTO" if remain <= 0 else remaining_text(remain),
+            account = self.profile_definition(b.get("profile_id") or "default")
+            server = account.get("server") or "sem servidor"
+            name.config(text=f"{'★ ' if b.get('favorite') else ''}{b['name'][:20]} [{server[:10]}]\n{account['name'][:10]} • {location(b)[:22]}")
+            uncertain = b.get("variable_respawn") and b.get("spawn_for") != b.get("last_kill")
+            timing.config(text=("PREVISTO" if uncertain else "PRONTO") if remain <= 0 else (("~" if uncertain else "") + remaining_text(remain)),
                           fg=ACCENT if remain <= 0 else (WARNING if remain <= 60 else TEXT))
             frame.pack(fill="x", padx=8, pady=2)
 

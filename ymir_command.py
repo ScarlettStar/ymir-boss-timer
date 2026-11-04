@@ -45,8 +45,7 @@ class CommandCenterMixin:
         self.content.pack(side="left", fill="both", expand=True)
         heading = tk.Frame(self.content, bg=BG)
         heading.pack(fill="x", padx=18, pady=(18, 10))
-        tk.Label(heading, text="LEGEND OF YMIR  /  CONTROLE DE RESPAWNS",
-                 bg=BG, fg=ACCENT, font=("Segoe UI", 8, "bold")).pack(anchor="w")
+        self.build_profile_controls(heading)
         self.page_heading = tk.Label(heading, text="Central de combate", bg=BG, fg=TEXT,
                                      font=("Segoe UI", 23, "bold"))
         self.page_heading.pack(anchor="w", pady=(2, 0))

@@ -17,16 +17,18 @@ from ymir_features import YmirVisualMixin, location as boss_location
 from datetime import datetime
 from pathlib import Path
 from ymir_updates import can_auto_install
+from ymir_models import (DEFAULT_REGIONS, item_profile, read_profiles, reconcile_profiles,
+                         atomic_json, trim_history, clean_samples, respawn_seconds)
 import tkinter as tk
 from tkinter import ttk, messagebox
 from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.2.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
-CATEGORIES = ("Bosses Universais", "Bosses Myrkheimr", "Bosses Fólkvangr")
+CATEGORIES = DEFAULT_REGIONS
 MYRKHEIMR = "Bosses Myrkheimr"
 CHANNELS = ("CHN 1", "CHN 2")
 FOLKVANGR = "Bosses Fólkvangr"
@@ -44,7 +46,8 @@ def floor_group_key(floor):
 def clone_for_floor(boss, floor):
     """Cópia independente do mesmo boss em outro piso, sem inventar kill."""
     return {**boss, "id": uuid.uuid4().hex, "floor": floor,
-            "end": 0, "last_kill": 0, "warned_for": 0, "finished_for": 0}
+            "end": 0, "last_kill": 0, "warned_for": 0, "finished_for": 0,
+            "spawn_for": 0, "respawn_samples": []}
 
 
 def boss_location(boss):
@@ -53,12 +56,12 @@ def boss_location(boss):
         return f"Myrkheimr • {boss.get('channel') or CHANNELS[0]}"
     if category == FOLKVANGR:
         return f"Fólkvangr • {boss.get('floor') or FLOORS[0]}"
-    return "Universais"
+    return "Universais" if category == CATEGORIES[0] else category
 
 
 def backup_data():
     """Backups locais independentes do EXE; nunca alteram os arquivos originais."""
-    files = (DATA_FILE, HISTORY_FILE, UPDATE_SETTINGS)
+    files = (DATA_FILE, HISTORY_FILE, UPDATE_SETTINGS, DATA_DIR / "profiles.json")
     if not any(p.exists() for p in files):
         return None
     backup_root = DATA_DIR / "backups"
@@ -81,7 +84,8 @@ def backup_data():
 def clone_for_channel(boss, channel):
     """Cria o mesmo boss no outro canal, com timer independente e ainda não iniciado."""
     return {**boss, "id": uuid.uuid4().hex, "channel": channel,
-            "end": 0, "last_kill": 0, "warned_for": 0, "finished_for": 0}
+            "end": 0, "last_kill": 0, "warned_for": 0, "finished_for": 0,
+            "spawn_for": 0, "respawn_samples": []}
 
 
 def boss_alert_label(boss):
@@ -115,8 +119,21 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         except OSError:
             pass
         self.last_backup_at = time.time()
+        try:
+            self.profile_state = read_profiles(DATA_DIR / "profiles.json")
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Contas não carregadas", str(exc), parent=self)
+            self.destroy()
+            raise
         self.bosses = self.load()
         self.history = self.load_history()
+        reconciled = reconcile_profiles(self.profile_state, self.bosses + self.history)
+        try:
+            self.persist_profile_state(reconciled)
+        except OSError as exc:
+            messagebox.showerror("Contas não salvas", str(exc), parent=self)
+            self.destroy()
+            raise
         self.active_tab = "timers"
         self.alerted = set()
         self.warning_alerted = set()
@@ -131,7 +148,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.last_upcoming_refresh = 0
         self.app_version = APP_VERSION
         self.category_headers = []
-        self.collapsed = {category: False for category in CATEGORIES}
+        self.collapsed = {category: False for category in self.category_choices()}
         self.collapsed.update({channel_group_key(ch): False for ch in CHANNELS})
         self.collapsed.update({floor_group_key(f): False for f in FLOORS})
         self.category_var = tk.StringVar(value=CATEGORIES[0])
@@ -154,6 +171,10 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.render_history()
         self.tick()
         self.protocol("WM_DELETE_WINDOW", self.close)
+
+    def persist_profile_state(self, candidate):
+        atomic_json(DATA_DIR / "profiles.json", candidate)
+        self.profile_state = candidate
 
     def read_update_repo(self):
         try:
@@ -552,12 +573,17 @@ try {
                     minutes = int(x.get("minutes", 0))
                     if not name or not 1 <= minutes <= 10080:
                         continue
-                    category = x.get("category") if x.get("category") in CATEGORIES else CATEGORIES[0]
+                    category = str(x.get("category") or CATEGORIES[0]).strip()[:60] or CATEGORIES[0]
                     channel = x.get("channel") if x.get("channel") in CHANNELS else CHANNELS[0]
                     floor = x.get("floor") if x.get("floor") in FLOORS else FLOORS[0]
                     boss = {"id": str(x.get("id", uuid.uuid4().hex)), "name": name,
                             "minutes": minutes, "category": category,
                             "favorite": x.get("favorite") is True,
+                            "profile_id": item_profile(x),
+                            "kind": str(x.get("kind") or "Boss").strip()[:60] or "Boss",
+                            "variable_respawn": x.get("variable_respawn") is True,
+                            "respawn_samples": clean_samples(x.get("respawn_samples", [])),
+                            "spawn_for": float(x.get("spawn_for", 0)),
                             "channel": channel if category == MYRKHEIMR else "",
                             "floor": floor if category == FOLKVANGR else "",
                             "end": float(x.get("end", 0)),
@@ -582,8 +608,8 @@ try {
             with HISTORY_FILE.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, list):
-                return [r for r in data if isinstance(r, dict) and
-                        all(k in r for k in ("name", "category", "killed_at", "respawn_at"))][-MAX_HISTORY:]
+                return trim_history([{**r, "profile_id": item_profile(r)} for r in data if isinstance(r, dict) and
+                        all(k in r for k in ("name", "category", "killed_at", "respawn_at"))], MAX_HISTORY)
         except (OSError, ValueError, TypeError):
             pass
         return []
@@ -593,7 +619,7 @@ try {
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             tmp = HISTORY_FILE.with_suffix(".tmp")
             with tmp.open("w", encoding="utf-8") as f:
-                json.dump(self.history[-MAX_HISTORY:], f, ensure_ascii=False, indent=2)
+                json.dump(trim_history(self.history, MAX_HISTORY), f, ensure_ascii=False, indent=2)
             tmp.replace(HISTORY_FILE)
         except OSError as e:
             messagebox.showerror("Histórico", f"Não foi possível salvar o histórico:\n{e}")
@@ -622,12 +648,13 @@ try {
             return
         for child in self.history_rows.winfo_children():
             child.destroy()
-        self.history_count.config(text=f"{len(self.history)} registros de derrotas")
-        if not self.history:
+        history = self.profile_history()
+        self.history_count.config(text=f"{len(history)} registros • {self.profile_identity()}")
+        if not history:
             tk.Label(self.history_rows, text="Nenhuma derrota registrada ainda.\nClique em 'Boss morreu / Iniciar' para registrar a primeira.",
                      fg=MUTED, bg=BG, font=("Segoe UI", 11), pady=32, justify="center").pack(fill="x")
             return
-        for index, r in enumerate(reversed(self.history)):
+        for index, r in enumerate(reversed(history)):
             row = tk.Frame(self.history_rows, bg=PANEL if index % 2 == 0 else BG,
                            highlightbackground=BORDER, highlightthickness=1)
             row.pack(fill="x", pady=3)
@@ -643,12 +670,16 @@ try {
             spawn = datetime.fromtimestamp(float(r["respawn_at"])).strftime("%d/%m/%Y  %H:%M:%S")
             tk.Label(details, text="MORTE  " + kill, fg=MUTED, bg=row.cget("bg"),
                      font=("Consolas", 9)).pack(side="left")
-            tk.Label(details, text="RESPAWN  " + spawn, fg=ACCENT, bg=row.cget("bg"),
+            tk.Label(details, text=("PREVISÃO  " if r.get("variable_respawn") else "RESPAWN  ") + spawn, fg=ACCENT, bg=row.cget("bg"),
                      font=("Consolas", 9, "bold")).pack(side="right")
+            if r.get("observed_respawn_at"):
+                observed = datetime.fromtimestamp(float(r["observed_respawn_at"])).strftime("%d/%m/%Y %H:%M:%S")
+                tk.Label(row, text="REAPARECIMENTO OBSERVADO  " + observed, bg=row.cget("bg"),
+                         fg=WARNING, font=("Segoe UI", 9)).pack(anchor="w", padx=12, pady=(0, 10))
 
     def clear_history(self):
-        if self.history and messagebox.askyesno("Limpar histórico", "Apagar todos os registros de derrotas? Os timers continuarão ativos."):
-            self.history.clear()
+        if self.profile_history() and messagebox.askyesno("Limpar histórico", f"Apagar o histórico de {self.profile_identity()}? Os timers continuarão ativos."):
+            self.history = [h for h in self.history if item_profile(h) != self.active_profile_id()]
             self.save_history()
             self.render_history()
 
@@ -723,7 +754,7 @@ try {
         self.minutes_entry = tk.Entry(form, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat",
                                       width=12, font=("Segoe UI", 10))
         self.minutes_entry.grid(row=1, column=1, sticky="ew", ipady=8, padx=(0, 8))
-        self.category_select = ttk.Combobox(form, textvariable=self.category_var, values=CATEGORIES,
+        self.category_select = ttk.Combobox(form, textvariable=self.category_var, values=self.category_choices(),
                                              state="readonly", width=19, font=("Segoe UI", 9))
         self.category_select.grid(row=1, column=2, sticky="ew", padx=(0, 8), ipady=5)
         GamerButton(form, text="+ Adicionar", command=self.add_boss, bg=ACCENT, fg=BG,
@@ -732,10 +763,20 @@ try {
         form.columnconfigure(0, weight=3)
         form.columnconfigure(1, weight=1)
         form.columnconfigure(2, weight=2)
+        extra = tk.Frame(form, bg=PANEL)
+        extra.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        tk.Label(extra, text="Categoria", bg=PANEL, fg=MUTED, font=("Segoe UI", 9)).pack(side="left", padx=(0, 6))
+        self.boss_kind_var = tk.StringVar(value="Boss")
+        self.boss_kind_select = ttk.Combobox(extra, textvariable=self.boss_kind_var, values=self.kind_choices(), width=15)
+        self.boss_kind_select.pack(side="left")
+        self.variable_respawn_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(extra, text="Respawn variável (aprender média)", variable=self.variable_respawn_var,
+                       bg=PANEL, fg=TEXT, selectcolor=BG, activebackground=PANEL,
+                       activeforeground=TEXT).pack(side="right")
         self.minutes_entry.bind("<Return>", lambda _e: self.add_boss())
         self.name_entry.bind("<Return>", lambda _e: self.add_boss())
         form_panel.pack_forget()
-        self.build_filter_bar(CATEGORIES, (*CHANNELS, *FLOORS))
+        self.build_filter_bar(self.category_choices(), (*CHANNELS, *FLOORS))
         self.section_heading = tk.Label(self.timer_view, text="SEUS BOSSES", bg=BG, fg=MUTED,
                  font=("Segoe UI", 9, "bold"))
         self.section_heading.pack(anchor="w", padx=16, pady=(8, 5))
@@ -814,7 +855,7 @@ try {
             return
         mini = tk.Toplevel(self)
         self.compact = mini
-        mini.title("Ymir • Mini Timer")
+        mini.title("Ymir • " + self.profile_identity())
         mini.configure(bg=BG)
         mini.geometry("385x330+60+60")
         mini.minsize(310, 160)
@@ -889,17 +930,17 @@ try {
     def group_for_header(self, category):
         if category.startswith(MYRKHEIMR + " • "):
             channel = category.split(" • ")[-1]
-            return [b for b in self.bosses
+            return [b for b in self.profile_bosses()
                     if b.get("category") == MYRKHEIMR and b.get("channel") == channel]
         if category.startswith(FOLKVANGR + " • "):
             floor = category.split(" • ", 1)[-1]
-            return [b for b in self.bosses
+            return [b for b in self.profile_bosses()
                     if b.get("category") == FOLKVANGR and b.get("floor") == floor]
-        return [b for b in self.bosses if b.get("category", CATEGORIES[0]) == category]
+        return [b for b in self.profile_bosses() if b.get("category", CATEGORIES[0]) == category]
 
     def render_sections(self, parent, compact=False):
         make_card = self.make_compact_card if compact else self.make_full_card
-        for category in CATEGORIES:
+        for category in self.category_choices():
             group = self.group_for_header(category)
             if not compact:
                 group = self.filtered_bosses(group)
@@ -952,7 +993,7 @@ try {
             child.destroy()
         self.compact_labels = {}
         self.category_headers = [(cat, button) for cat, button in self.category_headers if button.winfo_exists()]
-        if not self.bosses:
+        if not self.profile_bosses():
             tk.Label(self.mini_cards, text="Cadastre bosses no modo completo.",
                      bg=BG, fg=MUTED, pady=20).pack()
         self.render_sections(self.mini_cards, compact=True)
@@ -987,7 +1028,7 @@ try {
                 timer.config(text="--:--  • Aguardando", fg=MUTED)
                 born.config(text="Nascimento: --:--")
             elif end <= now:
-                timer.config(text="00:00  • DISPONÍVEL", fg=ACCENT)
+                timer.config(text="00:00  • PREVISÃO" if boss.get("variable_respawn") and boss.get("spawn_for") != boss.get("last_kill") else "00:00  • DISPONÍVEL", fg=ACCENT)
                 born.config(text="Previsto: " + datetime.fromtimestamp(end).strftime("%d/%m %H:%M:%S"))
             else:
                 remain = end - now
@@ -1004,8 +1045,16 @@ try {
             messagebox.showwarning("Dados inválidos", "Informe um nome (até 60 caracteres) e tempo entre 1 e 10080 minutos.")
             return
         category = self.category_var.get()
+        kind_var = self.__dict__.get("boss_kind_var")
+        kind = kind_var.get().strip() if kind_var is not None else "Boss"
+        variable_var = self.__dict__.get("variable_respawn_var")
+        if category not in self.category_choices() or not kind or len(kind) > 60:
+            messagebox.showwarning("Categoria inválida", "Selecione uma região e uma categoria de 1 a 60 caracteres.")
+            return
         boss = {"id": uuid.uuid4().hex, "name": name, "minutes": minutes,
-                "category": category,
+                "category": category, "profile_id": self.active_profile_id(), "kind": kind,
+                "variable_respawn": bool(variable_var.get()) if variable_var is not None else False,
+                "respawn_samples": [], "spawn_for": 0,
                 "channel": CHANNELS[0] if category == MYRKHEIMR else "",
                 "floor": FLOORS[0] if category == FOLKVANGR else "",
                 "end": 0, "warned_for": 0, "finished_for": 0, "last_kill": 0}
@@ -1017,6 +1066,8 @@ try {
                 self.bosses.append(clone_for_floor(boss, floor))
         self.name_entry.delete(0, "end")
         self.minutes_entry.delete(0, "end")
+        if "boss_kind_select" in self.__dict__:
+            self.boss_kind_select.configure(values=self.kind_choices())
         self.save()
         self.render()
 
@@ -1028,15 +1079,17 @@ try {
         if not isinstance(killed_at, (int, float)) or isinstance(killed_at, bool) or not 0 < killed_at <= now:
             raise ValueError("O horário da morte deve estar no passado ou no momento atual.")
         self.auto_update_idle_since = now
-        boss["end"] = killed_at + boss["minutes"] * 60
+        boss["end"] = killed_at + respawn_seconds(boss)
+        boss["spawn_for"] = 0
         boss["last_kill"] = killed_at
         self.history.append({"name": boss["name"], "category": boss.get("category", CATEGORIES[0]),
                              "channel": boss.get("channel", "") if boss.get("category") == MYRKHEIMR else "",
                              "floor": boss.get("floor", "") if boss.get("category") == FOLKVANGR else "",
                              "killed_at": killed_at, "respawn_at": boss["end"],
-                             "boss_id": boss["id"]})
+                             "boss_id": boss["id"], "profile_id": item_profile(boss),
+                             "kind": boss.get("kind", "Boss"), "variable_respawn": boss.get("variable_respawn", False)})
         self.history.sort(key=lambda entry: float(entry["killed_at"]))
-        self.history = self.history[-MAX_HISTORY:]
+        self.history = trim_history(self.history, MAX_HISTORY)
         self.save_history()
         self.render_history()
         boss["warned_for"] = boss["end"] if killed_at < now - 1 and boss["end"] - now <= 60 else 0
@@ -1065,7 +1118,7 @@ try {
     def render(self):
         visible = self.filtered_bosses()
         self._filter_visible_ids = tuple(b["id"] for b in visible)
-        self.section_heading.configure(text=f"SEUS BOSSES  •  {len(visible)} de {len(self.bosses)}")
+        self.section_heading.configure(text=f"SEUS BOSSES  •  {len(visible)} de {len(self.profile_bosses())}")
         for child in self.cards.winfo_children():
             child.destroy()
         self.category_headers = [(cat, button) for cat, button in self.category_headers if button.winfo_exists()]
@@ -1073,10 +1126,10 @@ try {
         self.status_labels = {}
         self.respawn_labels = {}
         self.progress_bars = {}
-        if not self.bosses:
+        if not self.profile_bosses():
             tk.Label(self.cards, text="Nenhum boss cadastrado.\nAdicione o primeiro acima.",
                      bg=BG, fg=MUTED, font=("Segoe UI", 11), pady=34).pack(fill="x")
-        if self.bosses and not visible:
+        if self.profile_bosses() and not visible:
             tk.Label(self.cards, text="Nenhum boss corresponde aos filtros. Use Limpar para ver todos.",
                      bg=BG, fg=MUTED, wraplength=450, pady=25).pack(fill="x")
         self.render_sections(self.cards)
@@ -1098,7 +1151,7 @@ try {
         GamerButton(top, text="★" if boss.get("favorite") else "☆",
                     command=lambda: self.toggle_favorite(boss), bg=PANEL, fg=WARNING,
                     font=("Segoe UI", 14)).pack(side="right", padx=8)
-        tk.Label(top, text=boss_location(boss).upper(), bg=PANEL, fg=region_color,
+        tk.Label(top, text=(boss_location(boss) + " • " + boss.get("kind", "Boss")).upper(), bg=PANEL, fg=region_color,
                  font=("Segoe UI", 8, "bold")).pack(anchor="w")
         name = tk.Label(top, text=boss["name"], bg=PANEL, fg=TEXT,
                         font=("Segoe UI", 15, "bold"), anchor="w", justify="left")
@@ -1121,6 +1174,10 @@ try {
         tk.Label(card, text=f"{last}   •   Ciclo de {boss['minutes']} min",
                  bg=PANEL, fg=MUTED, font=("Segoe UI", 9), anchor="w").pack(
                      fill="x", padx=16, pady=(0, 8))
+        learning = tk.Label(card, text=self.learning_description(boss), bg=PANEL, fg=WARNING if boss.get("variable_respawn") else MUTED,
+                            font=("Segoe UI", 9), anchor="w", justify="left")
+        learning.pack(fill="x", padx=16, pady=(0, 7))
+        learning.bind("<Configure>", lambda e: learning.configure(wraplength=max(180, e.width)))
         progress = ttk.Progressbar(card, style="Respawn.Horizontal.TProgressbar",
                                    maximum=100, mode="determinate")
         progress.pack(fill="x", padx=16, pady=(0, 10))
@@ -1140,7 +1197,14 @@ try {
         secondary.pack(fill="x", padx=14, pady=(0, 10))
         GamerButton(secondary, text="Morreu há…", command=lambda: self.previous_death_dialog(boss),
                     bg=PANEL, fg=WARNING, padx=8, pady=4, font=("Segoe UI", 9)).pack(side="right")
-        category_select = ttk.Combobox(secondary, values=CATEGORIES, state="readonly",
+        if boss.get("variable_respawn"):
+            GamerButton(secondary, text="Reapareceu", command=lambda: self.observation_dialog(boss),
+                        bg=PANEL, fg=ACCENT, padx=8, pady=4, font=("Segoe UI", 9)).pack(side="right", padx=4)
+        variable = tk.BooleanVar(value=boss.get("variable_respawn", False))
+        tk.Checkbutton(secondary, text="Variável", variable=variable,
+                       command=lambda: self.set_variable_respawn(boss, variable.get()), bg=PANEL,
+                       fg=TEXT, selectcolor=BG, activebackground=PANEL, activeforeground=TEXT).pack(side="left")
+        category_select = ttk.Combobox(secondary, values=self.category_choices(), state="readonly",
                                        width=16, font=("Segoe UI", 8))
         category_select.set(boss.get("category", CATEGORIES[0]))
         category_select.pack(side="left", padx=(0, 6))
@@ -1155,6 +1219,8 @@ try {
         name = boss["name"].strip().casefold()
         return [entry for entry in self.bosses
                 if entry.get("category") == category
+                and item_profile(entry) == item_profile(boss)
+                and entry.get("kind", "Boss") == boss.get("kind", "Boss")
                 and entry.get("name", "").strip().casefold() == name]
 
     def change_respawn_duration(self, boss, new_minutes, all_copies=False):
@@ -1172,8 +1238,8 @@ try {
             old_end = target.get("end", 0)
             killed_at = target.get("last_kill", 0)
             target["minutes"] = new_minutes
-            if old_end and killed_at:
-                new_end = killed_at + new_minutes * 60
+            if old_end and killed_at and target.get("spawn_for") != killed_at:
+                new_end = killed_at + respawn_seconds(target)
                 target["end"] = new_end
                 if new_end > now:
                     target["warned_for"] = 0
@@ -1213,7 +1279,7 @@ try {
                  font=("Segoe UI", 16, "bold")).pack(anchor="w", pady=(0, 9))
         tk.Label(area, text=f"{boss['name']}  •  {boss_location(boss)}", bg=BG, fg=TEXT,
                  font=("Segoe UI", 11, "bold"), wraplength=440).pack(anchor="w", pady=(0, 10))
-        tk.Label(area, text=f"Tempo atual: {boss['minutes']} minutos", bg=BG,
+        tk.Label(area, text=f"Tempo manual de referência: {boss['minutes']} minutos", bg=BG,
                  fg=MUTED).pack(anchor="w")
         value_var = tk.StringVar(value=str(boss["minutes"]))
         entry = tk.Entry(area, textvariable=value_var, bg=PANEL, fg=TEXT,
@@ -1272,7 +1338,7 @@ try {
         win.bind("<Escape>", lambda _event: win.destroy())
 
     def change_category(self, boss, category):
-        if category not in CATEGORIES or boss.get("category") == category:
+        if category not in self.category_choices() or boss.get("category") == category:
             return
         boss["category"] = category
         boss["channel"] = CHANNELS[0] if category == MYRKHEIMR else ""
@@ -1337,12 +1403,14 @@ try {
                 if boss.get("finished_for", 0) != end:
                     boss["finished_for"] = end
                     self.save()
-                    self.notify(boss_alert_label(boss), "Boss disponível!", "O horário de respawn chegou.")
+                    self.notify(self.alert_identity(boss), "Janela estimada de respawn" if boss.get("variable_respawn") else "Boss disponível!",
+                                "A previsão chegou. Confira no jogo e registre Reapareceu; a média não garante o nascimento."
+                                if boss.get("variable_respawn") else "O horário de respawn chegou.")
             elif remaining <= 60 and boss.get("warned_for", 0) != end:
                 boss["warned_for"] = end
                 self.save()
-                self.notify(boss_alert_label(boss), "Falta 1 minuto!",
-                            "Nasce às " + datetime.fromtimestamp(end).strftime("%H:%M:%S"))
+                self.notify(self.alert_identity(boss), "Previsão de respawn em 1 minuto" if boss.get("variable_respawn") else "Falta 1 minuto!",
+                            ("Previsão às " if boss.get("variable_respawn") else "Nasce às ") + datetime.fromtimestamp(end).strftime("%H:%M:%S"))
 
     def refresh_times(self):
         now = time.time()
@@ -1358,16 +1426,17 @@ try {
             timer = self.time_labels[bid]
             status = self.status_labels[bid]
             respawn = self.respawn_labels[bid]
-            respawn.config(text=("Nascimento previsto: " + datetime.fromtimestamp(end).strftime("%d/%m às %H:%M:%S")) if end else "Nascimento previsto: --:--")
+            respawn.config(text=(("Respawn estimado: " if boss.get("variable_respawn") else "Nascimento previsto: ") + datetime.fromtimestamp(end).strftime("%d/%m às %H:%M:%S")) if end else "Nascimento previsto: --:--")
             if not end:
                 timer.config(text="--:--", fg=MUTED)
                 status.config(text="Aguardando kill", fg=MUTED)
             elif remaining <= 0:
                 timer.config(text="00:00", fg=ACCENT)
-                status.config(text="PRONTO / RESPAWN", fg=ACCENT)
+                status.config(text=("PREVISÃO / CONFERIR" if boss.get("variable_respawn") and boss.get("spawn_for") != boss.get("last_kill")
+                                   else "PRONTO / RESPAWN"), fg=WARNING if boss.get("variable_respawn") and boss.get("spawn_for") != boss.get("last_kill") else ACCENT)
             else:
-                timer.config(text=format_seconds(remaining + 0.999), fg=WARNING if remaining <= 60 else TEXT)
-                status.config(text="Contando...", fg=MUTED)
+                timer.config(text=("~" if boss.get("variable_respawn") else "") + format_seconds(remaining + 0.999), fg=WARNING if remaining <= 60 else TEXT)
+                status.config(text="Contando (estimativa)" if boss.get("variable_respawn") else "Contando...", fg=MUTED)
 
     def tick(self):
         self.check_alerts()  # Todos os canais e pisos, mesmo recolhidos.
