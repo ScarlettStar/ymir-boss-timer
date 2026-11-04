@@ -159,3 +159,10 @@ Os avisos dos bosses variáveis são **estimativas**, não confirmação de nasc
 ### Validação
 
 Testes de migração, isolamento entre contas/canais/pisos, cópia sem timers/médias, histórico por conta, backup de profiles.json, regiões/categorias e aprendizado por observação. A CI Windows cobre troca de conta, diálogo de observação, criação de região, overlay de ambas as contas, persistência após reabrir e o reinício real do EXE onefile.
+
+
+## Versão 3.2.1 — Myrkheimr com respawn variável
+
+Todos os bosses de Myrkheimr já cadastrados em todas as contas e em CHN 1/2 recebem Respawn variável uma única vez. A migração preserva IDs, horários em andamento, duração manual, histórico e observações. As médias passam a valer nos próximos registros de morte; contagens já iniciadas mantêm a previsão original. A marca de migração é salva para não repetir a alteração a cada abertura.
+
+Novos cadastros de Myrkheimr e bosses movidos para essa região entram com variável ativado. No cadastro, a opção é marcada automaticamente ao selecionar Myrkheimr. As outras regiões mantêm seu comportamento. O aprendizado continua dependendo de confirmar **Reapareceu**; nenhuma média é inventada a partir de mortes isoladas. A duração manual é usada enquanto não houver observações.
