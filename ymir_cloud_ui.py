@@ -8,7 +8,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk, messagebox
-from ymir_cloud import config, login, exchange, entities, merge, apply_entities
+from ymir_cloud import DEFAULT_CONFIG, config, login, exchange, entities, merge, apply_entities
 from ymir_models import atomic_json
 from ymir_theme import BG, TEXT, MUTED, ACCENT, GamerButton
 
@@ -124,11 +124,11 @@ class CloudMixin:
         threading.Thread(target=work, daemon=True).start()
 
     def build_cloud_settings(self, frame):
-        tk.Label(frame, text='NUVEM GRATUITA • FIREBASE SPARK', bg=BG, fg=ACCENT).pack(anchor='w', padx=16, pady=12)
+        tk.Label(frame, text='SINCRONIZAR PC E CELULAR', bg=BG, fg=ACCENT).pack(anchor='w', padx=16, pady=12)
         tk.Label(frame, textvariable=self.cloud_status, bg=BG, fg=TEXT, wraplength=550).pack(anchor='w', padx=16, pady=5)
-        tk.Label(frame, text='Use o mesmo projeto e login no PC e no Android. Todas as contas do jogo deste aparelho serão sincronizadas.\n\nAlertas e aparência são locais. Sem internet, as marcações ficam pendentes. No celular, abra o app para receber os últimos horários antes de depender dos alertas.', bg=BG, fg=MUTED, justify='left', wraplength=550).pack(padx=16, pady=8)
+        tk.Label(frame, text='Use o mesmo login do Ymir Boss Timer no PC e no Android. Todas as contas do jogo deste aparelho serão sincronizadas.\n\nAlertas e aparência são locais. Sem internet, as marcações ficam pendentes. No celular, abra o app para receber os últimos horários antes de depender dos alertas.', bg=BG, fg=MUTED, justify='left', wraplength=550).pack(padx=16, pady=8)
         fields = {}
-        for key, label in (('project', 'ID do projeto Firebase'), ('api_key', 'Web API Key'), ('email', 'E-mail'), ('password', 'Senha')):
+        for key, label in (('email', 'E-mail'), ('password', 'Senha do Ymir Boss Timer')):
             tk.Label(frame, text=label, bg=BG, fg=TEXT).pack(anchor='w', padx=16)
             entry = ttk.Entry(frame, show='•' if key == 'password' else '')
             if self.cloud_session and key in self.cloud_session:
@@ -139,7 +139,7 @@ class CloudMixin:
             if self.cloud_busy:
                 return
             try:
-                settings = config(fields['project'].get().strip(), fields['api_key'].get().strip())
+                settings = dict(DEFAULT_CONFIG)
                 email, password = fields['email'].get(), fields['password'].get()
                 if not email.strip() or len(password) < 6:
                     raise ValueError('Informe e-mail e senha de pelo menos 6 caracteres.')

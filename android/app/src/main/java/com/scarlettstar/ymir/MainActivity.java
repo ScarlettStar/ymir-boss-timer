@@ -67,7 +67,7 @@ public final class MainActivity extends Activity {
         // Insets API 30 is guarded separately for Android 8–10.
         else root.setFitsSystemWindows(true);
         TextView title=label("⚔  YMIR",28,ACCENT);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("BOSS TIMER  •  ANDROID 0.2 NUVEM",11,MUTED));
+        root.addView(label("BOSS TIMER  •  ANDROID 0.2.1 NUVEM",11,MUTED));
         accountsBar=column();root.addView(accountsBar);
         LinearLayout navigation=row();for(String name:new String[]{"Bosses","Próximos","Contas","Ajustes"})rowButton(navigation,name,()->{tab=name;render();});root.addView(navigation);
         ScrollView scroll=new ScrollView(this);body=column();scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
@@ -195,17 +195,17 @@ public final class MainActivity extends Activity {
         body.addView(label("Importar substitui os dados deste celular após confirmação e cria uma cópia local de segurança. No PC: Ferramentas → Backup → Exportar. Leve o ZIP ao celular. O Windows não é alterado.\n\nALERTAS LOCAIS + NUVEM OPCIONAL\nO PC pode ficar desligado: os horários já registrados/importados ficam no Android. Com a nuvem conectada, abra o app para receber os últimos horários do PC. A sincronização em segundo plano é periódica e pode atrasar.\n\nPermita notificações e alarmes. O Android ainda pode atrasar avisos por economia de bateria ou configuração do fabricante. Forçar parada desativa os alarmes até reabrir o app. Esta prévia não tem atualização automática. Configure a nuvem gratuita acima para sincronizar os aparelhos.",14,MUTED));
     }
     private void renderCloudSettings() {
-        body.addView(label("NUVEM GRATUITA • FIREBASE SPARK",18,ACCENT));
+        body.addView(label("SINCRONIZAR PC E CELULAR",18,ACCENT));
         cloudStatus=label(CloudSync.status,14,WARNING);body.addView(cloudStatus);
-        body.addView(label("Mesmo projeto e login nos dois aparelhos. Contas, bosses, timers, histórico e médias são compartilhados. Alertas e aparência ficam neste aparelho. Abra o app para sincronizar imediatamente; em segundo plano o Android pode adiar a consulta.",14,MUTED));
+        body.addView(label("Use o mesmo login do Ymir Boss Timer nos dois aparelhos. Contas, bosses, timers, histórico e médias são compartilhados. Alertas e aparência ficam neste aparelho. Abra o app para sincronizar imediatamente; em segundo plano o Android pode adiar a consulta.",14,MUTED));
         addButton(body,CloudSync.connected(this)?"Alterar conexão / login":"Conectar à nuvem",()->{
             JSONObject saved=CloudSync.settings(this);LinearLayout fields=column();fields.setPadding(dp(18),0,dp(18),0);
-            EditText project=input("ID do projeto Firebase",saved.optString("project"),false),api=input("Web API Key",saved.optString("api_key"),false),email=input("E-mail",saved.optString("email"),false),password=input("Senha","",false);
+            EditText email=input("E-mail",saved.optString("email"),false),password=input("Senha do Ymir Boss Timer","",false);
             password.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);email.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
-            for(View v:new View[]{project,api,email,password})fields.addView(v);
+            for(View v:new View[]{email,password})fields.addView(v);
             CheckBox create=new CheckBox(this);create.setText("Criar novo login");create.setTextColor(TEXT);fields.addView(create);
             new AlertDialog.Builder(this).setTitle("Conectar dados à nuvem").setMessage("Todas as contas locais serão associadas a este login. Em conflito, a alteração já na nuvem tem prioridade e a alteração local fica guardada em uma cópia.").setView(fields).setNegativeButton("Cancelar",null).setPositiveButton("Conectar",(d,w)->{
-                try{String p=project.getText().toString().trim(),a=api.getText().toString().trim(),e=email.getText().toString(),pw=password.getText().toString();CloudSync.validateConfig(p,a);if(e.trim().isEmpty()||pw.length()<6)throw new IllegalArgumentException("Informe e-mail e senha de pelo menos 6 caracteres.");password.setText("");CloudSync.login(this,p,a,e,pw,create.isChecked(),ok->{render();if(!ok)message(CloudSync.status);});}catch(Exception ex){error(ex);}
+                try{String p=CloudConfig.PROJECT,a=CloudConfig.API_KEY,e=email.getText().toString(),pw=password.getText().toString();CloudSync.validateConfig(p,a);if(e.trim().isEmpty()||pw.length()<6)throw new IllegalArgumentException("Informe e-mail e senha de pelo menos 6 caracteres.");password.setText("");CloudSync.login(this,p,a,e,pw,create.isChecked(),ok->{render();if(!ok)message(CloudSync.status);});}catch(Exception ex){error(ex);}
             }).show();
         });
         addButton(body,"Sincronizar agora",()->CloudSync.sync(this,true,ok->{render();if(!ok)message(CloudSync.status);}));

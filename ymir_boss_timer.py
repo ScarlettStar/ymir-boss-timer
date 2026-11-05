@@ -27,7 +27,7 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.6.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS

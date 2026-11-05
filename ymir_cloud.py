@@ -8,6 +8,9 @@ import urllib.request
 import urllib.error
 import urllib.parse
 
+# Firebase public client configuration, supplied by the project owner.
+DEFAULT_CONFIG = {'project': 'ymir-boss-timer-b4dfe',
+                  'api_key': 'AIzaSyAlSZrr7nMctIzLR9qx2o6UxnCZnYY_xwQ'}
 LIMIT = 850_000
 LOCAL_BOSS = ('warned_for', 'finished_for')
 
