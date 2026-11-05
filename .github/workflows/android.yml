@@ -68,6 +68,7 @@ jobs:
           working-directory: android
           script: |
             gradle --no-daemon connectedDebugAndroidTest
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell am start -n com.scarlettstar.ymir/.MainActivity
             sleep 3
             adb shell screencap -p /sdcard/ymir-android.png
