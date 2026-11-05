@@ -73,7 +73,7 @@ class CloudSyncTests(unittest.TestCase):
         with self.assertRaises(ValueError):apply_entities(state(),bad)
 
     def test_first_pairing_unions_catalogs_and_prefers_cloud_profile(self):
-        local=state();remote=state();remote['profiles']['profiles'][0]['name']='Conta no PC';remote['bosses'][0]['id']='different'
+        local=state();remote=state();remote['profiles']['profiles'][0]['name']='Conta no PC';remote['bosses'][0]['id']='different';remote['bosses'][0]['name']='Outra árvore'
         out,_=merge({},entities(local),entities(remote))
         applied=apply_entities(local,out)
         self.assertEqual(len(applied['bosses']),2)

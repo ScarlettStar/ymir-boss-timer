@@ -53,6 +53,19 @@ def merge(base, local, remote, prefer_local=False):
     # Profile removals cannot leave dangling timers/history.
     profiles = {k[2:] for k in out if k.startswith('p:')}
     out = {k: v for k, v in out.items() if k.startswith('p:') or v.get('profile_id', 'default') in profiles}
+    # Two devices may have created the same channel definition with different IDs.
+    # Collapse semantic duplicates before a CAS write, and archive discarded rows.
+    from ymir_catalog import dedupe_channel_bosses
+    rows = [v for k, v in out.items() if k.startswith('b:')]
+    consolidated, removed = dedupe_channel_bosses(rows)
+    if removed:
+        for discarded in removed:
+            b = discarded['boss']
+            key = 'b:' + canonical([b.get('profile_id', 'default'), b['id']])
+            out.pop(key, None)
+            conflicts.append({'key': key, 'local': b, 'reason': discarded['reason']})
+        for b in consolidated:
+            out['b:' + canonical([b.get('profile_id', 'default'), b['id']])] = b
     return out, conflicts
 
 
