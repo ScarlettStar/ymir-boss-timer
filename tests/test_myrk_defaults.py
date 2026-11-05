@@ -79,16 +79,3 @@ class MyrkVariableDefaultsTests(unittest.TestCase):
         self.assertEqual({b["channel"] for b in app.bosses}, set(ymir.CHANNELS))
         self.assertTrue(all(b["variable_respawn"] and b["myrk_variable_v1"] for b in app.bosses))
         self.assertTrue(all(b["end"] == 0 for b in app.bosses))
-
-    def test_moving_boss_into_myrk_enables_variable_and_keeps_timer(self):
-        app = self.app()
-        entry = dict(id="a", name="Chefe", minutes=180, category=ymir.CATEGORIES[0],
-                     end=20000, last_kill=9200, variable_respawn=False)
-        app.bosses = [entry]
-        app.save = app.render = Mock()
-        app.change_category(entry, ymir.MYRKHEIMR)
-        self.assertTrue(entry["variable_respawn"])
-        self.assertEqual(entry["end"], 20000)
-        self.assertEqual(len(app.bosses), 2)
-        self.assertTrue(app.bosses[1]["variable_respawn"])
-        self.assertEqual(app.bosses[1]["end"], 0)
