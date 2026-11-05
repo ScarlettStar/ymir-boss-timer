@@ -106,7 +106,10 @@ def format_seconds(seconds):
     return f"{h:02d}:{m:02d}:{sec:02d}" if h else f"{m:02d}:{sec:02d}"
 
 
-class BossTimerApp(YmirVisualMixin, tk.Tk):
+from ymir_cloud_ui import CloudMixin
+
+
+class BossTimerApp(CloudMixin, YmirVisualMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
@@ -167,6 +170,7 @@ class BossTimerApp(YmirVisualMixin, tk.Tk):
         self.auto_update_idle_since = time.time()
         self.init_productivity()
         self.build_ui()
+        self.init_cloud()
         self.after(1400, self.init_tray)
         self.after(650, self.signal_update_ready)
         if self._channel_migrated or self._floor_migrated or self._myrk_variable_migrated:

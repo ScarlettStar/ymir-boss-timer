@@ -1,0 +1,4 @@
+{
+  "firestore": {"rules": "cloud/firestore.rules", "indexes": "cloud/firestore.indexes.json"},
+  "emulators": {"firestore": {"port": 8080}, "ui": {"enabled": false}}
+}

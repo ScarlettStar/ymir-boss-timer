@@ -277,9 +277,11 @@ class ProductivityMixin:
         win.geometry('650x610')
         tabs = ttk.Notebook(win)
         tabs.pack(fill='both', expand=True, padx=12, pady=12)
-        alerts, shortcuts, backup, summary = [tk.Frame(tabs, bg=BG) for _ in range(4)]
+        alerts, shortcuts, backup, summary, cloud = [tk.Frame(tabs, bg=BG) for _ in range(5)]
         for frame, title in zip((alerts, shortcuts, backup, summary), ('Alertas', 'Atalhos', 'Backup', 'Contas / canais')):
             tabs.add(frame, text=title)
+        tabs.add(cloud, text='Nuvem')
+        self.build_cloud_settings(cloud)
         self.build_alert_settings(alerts)
         tk.Label(shortcuts, text='CTRL + ALT + O → abrir/fechar mini painel\nCTRL + ALT + K → Matei o boss selecionado\nCTRL + ALT + R → Reapareceu (boss variável)\nCTRL + ALT + C → trocar CHN 1 / CHN 2\n\nSelecione o boss clicando na linha do mini painel.\nA seleção inclui conta, servidor e canal.\nNenhuma ação usa automaticamente o próximo boss.', bg=BG, fg=TEXT, justify='left', wraplength=570).pack(anchor='w', padx=16, pady=20)
         enabled = tk.BooleanVar(value=self.preferences.get('global_hotkeys', False))

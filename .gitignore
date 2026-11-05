@@ -8,3 +8,9 @@ dist/
 *.new
 .idea/
 .vscode/
+
+node_modules/
+*-debug.log
+.firebase/
+cloud-session.*
+cloud-base.json
