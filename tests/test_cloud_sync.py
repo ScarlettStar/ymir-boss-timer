@@ -102,3 +102,55 @@ class CloudSyncTests(unittest.TestCase):
             self.assertEqual(method,'GET')
             return {'fields':{'schema':{'integerValue':'1'},'payload':{'stringValue':json.dumps(local)}},'updateTime':'r'}
         with patch('ymir_cloud.request',side_effect=transport):self.assertEqual(exchange(settings,local,local)[0],local)
+
+class CloudApplyTests(unittest.TestCase):
+    def test_failed_local_write_does_not_advance_acknowledged_baseline(self):
+        import tempfile
+        import queue
+        from pathlib import Path
+        from unittest.mock import Mock
+        from ymir_cloud_ui import CloudMixin
+        source=state();remote=copy.deepcopy(source);remote['bosses'][0]['end']=4000
+        class Host(CloudMixin):
+            pass
+        app=Host();app.bosses=source['bosses'];app.history=source['history'];app.profile_state=source['profiles'];app.preferences=source['preferences']
+        session={'project':'project','uid':'user'}
+        app.cloud_session=session;app.cloud_busy=True;app.cloud_next=float('inf');app.cloud_status=Mock();app.after=Mock();app.update_busy=False;app.refresh_account_view=Mock()
+        app.cloud_queue=queue.SimpleQueue();app.cloud_queue.put(('sync',(session,source,entities(remote),[])))
+        with tempfile.TemporaryDirectory() as folder:
+            app.cloud_base_file=Path(folder)/'cloud-base.json'
+            with patch('ymir_boss_timer.backup_data'),patch('ymir_productivity.restore_files',side_effect=OSError('disk full')):
+                app.cloud_poll()
+            self.assertFalse(app.cloud_base_file.exists())
+            self.assertEqual(app.bosses[0]['end'],2000)
+            app.refresh_account_view.assert_not_called()
+
+    def test_successful_apply_keeps_edits_made_during_request_pending(self):
+        import tempfile
+        import queue
+        from pathlib import Path
+        from unittest.mock import Mock
+        from ymir_cloud_ui import CloudMixin
+        source=state();remote=copy.deepcopy(source);remote['bosses'][0]['end']=4000
+        class Host(CloudMixin):
+            pass
+        app=Host();app.bosses=copy.deepcopy(source['bosses']);app.bosses[0]['end']=5000
+        app.history=source['history'];app.profile_state=source['profiles'];app.preferences=source['preferences']
+        session={'project':'project','uid':'user'}
+        app.cloud_session=session;app.cloud_busy=True;app.cloud_next=float('inf');app.cloud_status=Mock();app.after=Mock();app.update_busy=False;app.refresh_account_view=Mock()
+        app.cloud_queue=queue.SimpleQueue();app.cloud_queue.put(('sync',(session,source,entities(remote),[])))
+        with tempfile.TemporaryDirectory() as folder:
+            app.cloud_base_file=Path(folder)/'cloud-base.json'
+            with patch('ymir_boss_timer.backup_data'),patch('ymir_productivity.restore_files'):
+                app.cloud_poll()
+            baseline=json.loads(app.cloud_base_file.read_text())['base']
+            self.assertEqual(next(v for k,v in baseline.items() if k.startswith('b:'))['end'],4000)
+            self.assertEqual(app.bosses[0]['end'],5000)
+
+    @unittest.skipUnless(__import__('os').name=='nt','DPAPI requires Windows')
+    def test_windows_session_protection_roundtrip(self):
+        from ymir_cloud_ui import protect
+        raw=b'{"refresh":"private-session-token"}'
+        encrypted=protect(raw)
+        self.assertNotIn(b'private-session-token',encrypted)
+        self.assertEqual(protect(encrypted,True),raw)

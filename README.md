@@ -201,3 +201,8 @@ Avisos simultâneos ficam no mesmo painel com rolagem; o painel fecha após 20 s
 - **Resumo:** Ferramentas → Contas/canais reúne todas as contas por região/canal/piso e atualiza as contagens a cada segundo.
 
 Atualização automática preservada.
+
+
+## Sincronização gratuita Windows / Android (em validação)
+
+A conexão opcional usa Firebase Spark, Authentication por e-mail/senha e Firestore, sem Functions ou faturamento. Configuração e limites em [cloud/README.md](cloud/README.md). Windows: Ferramentas → Nuvem; Android: Ajustes → Conectar à nuvem. O projeto precisa ser configurado uma vez antes de usar o mesmo login nos dois aparelhos.

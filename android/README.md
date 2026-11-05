@@ -1,4 +1,4 @@
-# Ymir Android 0.1 — prévia independente
+# Ymir Android 0.2 — prévia com nuvem gratuita
 
 App Android nativo, Android 8+ (API 26), com notificações agendadas no próprio celular. Não depende do PC ligado ou de conexão com a internet após registrar/importar os horários.
 
@@ -17,10 +17,10 @@ App Android nativo, Android 8+ (API 26), com notificações agendadas no própri
 1. Baixe o APK no artefato `Ymir-Android-preview` da execução Android no GitHub. É uma compilação de teste assinada com a chave debug do runner, sem Play Store e sem atualizações automáticas.
 2. Abra o APK no celular e permita a instalação por essa origem quando o Android solicitar.
 3. Em Ajustes, permita notificações e alarmes exatos. Configure som/vibração e faça o teste de 10 segundos com a tela do app fechada.
-4. Cadastre seus bosses ou, no Windows, Ferramentas → Backup → Exportar; transfira o ZIP ao celular e importe em Ajustes.
+4. Conecte a nuvem gratuita em Ajustes para receber contas e bosses do PC. Como alternativa offline, cadastre-os ou importe um backup ZIP.
 5. No celular, registre Matei e depois Reapareceu somente quando observar o nascimento real. Não há interação automática com o jogo.
 
-**Não há sincronização automática ou login nesta prévia.** Alterações feitas no PC depois da exportação não chegam ao celular, e vice-versa. Não há backend, coleta de dados ou permissão INTERNET. A etapa de sincronização requer um serviço de autenticação/dados na nuvem e política de conflitos, antes de habilitar marcações compartilhadas.
+**Sincronização opcional:** configure o mesmo projeto Firebase Spark e login no Windows e no Android. Veja [o passo a passo da nuvem](../cloud/README.md). Esta versão solicita INTERNET somente para Authentication/Firestore. Alertas continuam locais; abrir o app consulta os horários imediatamente e o sistema tenta consultas periódicas em segundo plano. O Android pode adiar essas consultas. Nenhuma configuração de faturamento é criada.
 
 Alarmes dependem do celular ligado e das permissões/configurações do Android. Sem acesso a alarmes exatos usa agendamento aproximado e informa na tela. Economia de bateria/Doze/fabricante podem atrasar avisos, mesmo com permissão. Forçar parada impede entrega até reabrir. Alertas encerrados há mais de 15 minutos não são repetidos ao reabrir/reiniciar/importar. Privacidade de conteúdo na tela bloqueada é configurada pelo Android.
 
