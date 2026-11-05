@@ -2,7 +2,7 @@ import copy
 import json
 import unittest
 from unittest.mock import patch
-from ymir_cloud import entities, merge, apply_entities, exchange, CloudError
+from ymir_cloud import entities, merge, apply_entities, exchange, CloudError, validate_pairing
 
 
 def state():
@@ -143,7 +143,7 @@ class CloudApplyTests(unittest.TestCase):
             app.cloud_base_file=Path(folder)/'cloud-base.json'
             with patch('ymir_boss_timer.backup_data'),patch('ymir_productivity.restore_files'):
                 app.cloud_poll()
-            baseline=json.loads(app.cloud_base_file.read_text())['base']
+            baseline=json.loads(app.cloud_base_file.read_text(encoding='utf-8'))['base']
             self.assertEqual(next(v for k,v in baseline.items() if k.startswith('b:'))['end'],4000)
             self.assertEqual(app.bosses[0]['end'],5000)
 
@@ -154,3 +154,14 @@ class CloudApplyTests(unittest.TestCase):
         encrypted=protect(raw)
         self.assertNotIn(b'private-session-token',encrypted)
         self.assertEqual(protect(encrypted,True),raw)
+
+class CloudPairingTests(unittest.TestCase):
+    def test_independent_default_accounts_cannot_mix_different_servers(self):
+        local=state();remote=state();remote['profiles']['profiles'][0]['server']='SA099'
+        with self.assertRaises(ValueError):validate_pairing({},entities(local),entities(remote))
+        # Once paired, renaming the server is a normal tracked edit, not a fresh collision.
+        validate_pairing(entities(local),entities(local),entities(remote))
+
+    def test_empty_phone_can_receive_existing_desktop_catalog(self):
+        local=state();local['bosses']=[];local['profiles']['profiles'][0]['server']=''
+        validate_pairing({},entities(local),entities(state()))

@@ -38,6 +38,15 @@ public final class CloudModel {
         List<String> all=new ArrayList<>();out.keys().forEachRemaining(all::add);for(String k:all)if(!k.startsWith("p:")&&!ids.contains(TimerModel.profile(out.getJSONObject(k))))out.remove(k);
         return new Merged(out,conflicts);
     }
+    public static void validatePairing(JSONObject base,JSONObject local,JSONObject remote)throws JSONException {
+        java.util.Iterator<String> keys=local.keys();while(keys.hasNext()){
+            String k=keys.next();if(!k.startsWith("p:")||base.has(k)||!remote.has(k))continue;
+            JSONObject p=local.getJSONObject(k),other=remote.getJSONObject(k);
+            if(!p.optString("server").trim().equalsIgnoreCase(other.optString("server").trim())){
+                java.util.Iterator<String> all=local.keys();while(all.hasNext()){String b=all.next();if(b.startsWith("b:")&&TimerModel.profile(local.getJSONObject(b)).equals(p.getString("id")))throw new IllegalArgumentException("As contas locais e da nuvem usam o mesmo ID em servidores diferentes. Exporte um backup e importe o backup do PC no Android antes de conectar, ou use outro login para manter os conjuntos separados.");}
+            }
+        }
+    }
     public static JSONObject apply(JSONObject state,JSONObject records)throws JSONException {
         if(records.length()>10000)throw new IllegalArgumentException("Estrutura de nuvem inválida.");
         java.util.Iterator<String> recordKeys=records.keys();while(recordKeys.hasNext()){

@@ -53,6 +53,17 @@ def merge(base, local, remote, prefer_local=False):
     return out, conflicts
 
 
+def validate_pairing(base, local, remote):
+    # Independent installs reuse "default"; never attach an existing catalog to
+    # the other device's different server just because that ID matches.
+    for key, profile in local.items():
+        if not key.startswith('p:') or key in base or key not in remote:
+            continue
+        if profile.get('server', '').strip().casefold() != remote[key].get('server', '').strip().casefold():
+            if any(k.startswith('b:') and b.get('profile_id', 'default') == profile['id'] for k, b in local.items()):
+                raise ValueError('As contas locais e da nuvem usam o mesmo ID em servidores diferentes. Exporte um backup e importe o backup do PC no Android antes de conectar, ou use outro login para manter os conjuntos separados.')
+
+
 def apply_entities(state, records):
     if not isinstance(records, dict) or len(records) > 10000:
         raise ValueError('Estrutura de nuvem inválida.')
@@ -166,6 +177,7 @@ def exchange(session, base, local):
             if exc.code != '404':
                 raise
             remote, precondition = {}, {'currentDocument.exists': 'false'}
+        validate_pairing(base, local, remote)
         merged, conflicts = merge(base, local, remote)
         # Validate untrusted records before publishing or applying.
         if merged:

@@ -36,4 +36,9 @@ public class CloudModelTest {
         JSONObject s=state();s.getJSONArray("history").put(new JSONObject().put("name","Árvore").put("boss_id","boss-1").put("profile_id","default").put("category","Túmulo do Rei").put("killed_at",1000.125).put("respawn_at",2000));
         JSONObject e=CloudModel.entities(s);assertTrue(e.has("b:[\"default\",\"boss-1\"]"));assertTrue(e.has("h:[\"default\",\"boss-1\",1000125]"));
     }
+    @Test public void firstPairingCannotMergeDifferentServersWithSameDefaultId()throws Exception {
+        JSONObject local=state(),remote=state();remote.getJSONObject("profiles").getJSONArray("profiles").getJSONObject(0).put("server","SA099");
+        assertThrows(IllegalArgumentException.class,()->CloudModel.validatePairing(new JSONObject(),CloudModel.entities(local),CloudModel.entities(remote)));
+        local.put("bosses",new JSONArray());CloudModel.validatePairing(new JSONObject(),CloudModel.entities(local),CloudModel.entities(remote));
+    }
 }

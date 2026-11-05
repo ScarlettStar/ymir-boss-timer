@@ -65,7 +65,7 @@ public final class CloudSync {
                 saveBase(c,session,result.records,result.conflicts);AlarmScheduler.reschedule(c,updated);
                 status="Sincronizado às "+new java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale.getDefault()).format(new java.util.Date())+(result.conflicts.length()>0?" • conflito: mantido dado da nuvem; cópia local guardada":"");busy=false;if(callback!=null)callback.done(true);
             }catch(Exception e){busy=false;status="Falha ao salvar sincronização; nova tentativa pendente.";if(callback!=null)callback.done(false);}});
-        }catch(Exception e){MAIN.post(()->{busy=false;status=e instanceof HttpError?e.getMessage():"Sem sincronização. Marcações locais preservadas; tentaremos depois.";if(callback!=null)callback.done(false);});}});
+        }catch(Exception e){MAIN.post(()->{busy=false;status=e instanceof HttpError||e instanceof IllegalArgumentException?e.getMessage():"Sem sincronização. Marcações locais preservadas; tentaremos depois.";if(callback!=null)callback.done(false);});}});
     }
     private static CloudModel.Merged exchange(JSONObject session,JSONObject base,JSONObject local)throws Exception {
         String project=session.getString("project"),api=session.getString("api_key");validateConfig(project,api);
@@ -76,6 +76,7 @@ public final class CloudSync {
             JSONObject remote;String condition;
             try{JSONObject document=request(url,"GET",null,token,false),fields=document.getJSONObject("fields");if(!fields.getJSONObject("schema").getString("integerValue").equals("1"))throw new IOException("Versão de nuvem incompatível.");String payload=fields.getJSONObject("payload").getString("stringValue");if(payload.getBytes(StandardCharsets.UTF_8).length>850000)throw new IOException("Nuvem muito grande.");remote=new JSONObject(payload);condition="currentDocument.updateTime="+URLEncoder.encode(document.getString("updateTime"),"UTF-8");}
             catch(HttpError error){if(error.code!=404)throw error;remote=new JSONObject();condition="currentDocument.exists=false";}
+            CloudModel.validatePairing(base,local,remote);
             CloudModel.Merged merged=CloudModel.merge(base,local,remote,false);
             CloudModel.apply(Store.empty(),merged.records); // Validate before upload/application.
             if(CloudModel.equal(merged.records,remote))return merged;
