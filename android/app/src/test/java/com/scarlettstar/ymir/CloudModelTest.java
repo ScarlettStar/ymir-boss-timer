@@ -41,4 +41,16 @@ public class CloudModelTest {
         assertThrows(IllegalArgumentException.class,()->CloudModel.validatePairing(new JSONObject(),CloudModel.entities(local),CloudModel.entities(remote)));
         local.put("bosses",new JSONArray());CloudModel.validatePairing(new JSONObject(),CloudModel.entities(local),CloudModel.entities(remote));
     }
+    @Test public void sameBossDifferentDeviceIdsCollapseAndRemainStableAcrossSyncs()throws Exception {
+        JSONObject local=state(),remote=CloudModel.copy(local);remote.getJSONArray("bosses").getJSONObject(0).put("id","other-device-id").put("last_kill",3000).put("end",6600);
+        CloudModel.Merged result=CloudModel.merge(new JSONObject(),CloudModel.entities(local),CloudModel.entities(remote),false);
+        JSONObject applied=CloudModel.apply(local,result.records);assertEquals(1,applied.getJSONArray("bosses").length());assertEquals(6600,applied.getJSONArray("bosses").getJSONObject(0).getInt("end"));assertEquals(1,result.conflicts.length());
+        CloudModel.Merged again=CloudModel.merge(result.records,result.records,result.records,false);assertEquals(0,again.conflicts.length());assertTrue(CloudModel.equal(result.records,again.records));
+    }
+    @Test public void channelDedupeNormalizesRegionAccentsAndHonorsNewerReset()throws Exception {
+        JSONObject local=state(),remote=CloudModel.copy(local);local.getJSONArray("bosses").getJSONObject(0).put("favorite",true).put("respawn_samples",new JSONArray().put(new JSONObject().put("killed_at",10).put("spawned_at",60)));
+        remote.getJSONArray("bosses").getJSONObject(0).put("id","newer").put("category","Bosses Tumulo do Rei").put("last_kill",3000).put("end",0).put("respawn_samples",new JSONArray().put(new JSONObject().put("killed_at",80).put("spawned_at",140)));
+        CloudModel.Merged result=CloudModel.merge(new JSONObject(),CloudModel.entities(local),CloudModel.entities(remote),false);JSONObject b=CloudModel.apply(local,result.records).getJSONArray("bosses").getJSONObject(0);
+        assertEquals("newer",b.getString("id"));assertEquals(0,b.getInt("end"));assertTrue(b.getBoolean("favorite"));assertEquals(2,b.getJSONArray("respawn_samples").length());
+    }
 }

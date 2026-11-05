@@ -105,6 +105,16 @@ def copy_boss_definitions(bosses, destination):
 
 
 
+def channel_copy_id(boss, channel):
+    """Stable per definition across devices; repeated migrations cannot generate new IDs."""
+    def normal(text):
+        return ''.join(c for c in unicodedata.normalize('NFKD', str(text).lower())
+                       if not unicodedata.combining(c)).strip()
+    identity = [item_profile(boss), channel_region(boss.get('category')) or boss.get('category', ''),
+                normal(boss.get('name', '')), normal(boss.get('kind', 'Boss')), channel]
+    return uuid.uuid5(uuid.NAMESPACE_URL, 'ymir-channel-v1:' + json.dumps(identity, ensure_ascii=False, separators=(',', ':'))).hex
+
+
 def missing_tomb_channel_copies(bosses, profile_id=None, unmigrated_only=False):
     """Plan missing CHN 2 definitions without changing originals or existing CHN 2."""
     def key(b):
@@ -119,7 +129,7 @@ def missing_tomb_channel_copies(bosses, profile_id=None, unmigrated_only=False):
                 or (unmigrated_only and boss.get("tomb_channel_copy_v1")) or key(boss) in known):
             continue
         copied = copy_boss_definitions([boss], item_profile(boss))[0]
-        copied.update(channel="CHN 2", tomb_channel_copy_v1=True)
+        copied.update(id=channel_copy_id(boss, "CHN 2"), channel="CHN 2", tomb_channel_copy_v1=True)
         copies.append(copied)
         known.add(key(boss))
     return copies

@@ -20,14 +20,14 @@ from ymir_updates import can_auto_install
 from ymir_alerts import BossAlertPanel
 from ymir_models import (DEFAULT_REGIONS, item_profile, read_profiles, reconcile_profiles,
                          atomic_json, trim_history, clean_samples, respawn_seconds,
-                         uses_channels, channel_region, region_label, TOMB_REGION, missing_tomb_channel_copies)
+                         uses_channels, channel_region, region_label, TOMB_REGION, missing_tomb_channel_copies, channel_copy_id)
 import tkinter as tk
 from tkinter import ttk, messagebox
 from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.6.1"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS
@@ -85,7 +85,7 @@ def backup_data():
 
 def clone_for_channel(boss, channel):
     """Cria o mesmo boss no outro canal, com timer independente e ainda não iniciado."""
-    return {**boss, "id": uuid.uuid4().hex, "channel": channel,
+    return {**boss, "id": channel_copy_id(boss, channel), "channel": channel,
             "end": 0, "last_kill": 0, "warned_for": 0, "finished_for": 0,
             "spawn_for": 0, "respawn_samples": []}
 
@@ -107,9 +107,10 @@ def format_seconds(seconds):
 
 
 from ymir_cloud_ui import CloudMixin
+from ymir_catalog import CatalogMixin, normalized
 
 
-class BossTimerApp(CloudMixin, YmirVisualMixin, tk.Tk):
+class BossTimerApp(CatalogMixin, CloudMixin, YmirVisualMixin, tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
@@ -169,6 +170,7 @@ class BossTimerApp(CloudMixin, YmirVisualMixin, tk.Tk):
         self.last_update_check = 0
         self.auto_update_idle_since = time.time()
         self.init_productivity()
+        self.repair_catalog_once()
         self.build_ui()
         self.init_cloud()
         self.after(1400, self.init_tray)
@@ -575,9 +577,9 @@ try {
                 data = json.load(f)
             if isinstance(data, list):
                 clean = []
-                channel2_keys = {(item_profile(row), str(row.get("category") or CATEGORIES[0]).strip()[:60],
-                                  str(row.get("name", "")).strip()[:60].casefold(),
-                                  str(row.get("kind") or "Boss").strip()[:60] or "Boss")
+                channel2_keys = {(item_profile(row), channel_region(row.get("category")),
+                                  normalized(row.get("name", "")),
+                                  normalized(row.get("kind") or "Boss"))
                                  for row in data if isinstance(row, dict) and row.get("channel") == CHANNELS[1]}
                 for x in data:
                     if not isinstance(x, dict):
@@ -611,7 +613,7 @@ try {
                         self._myrk_variable_migrated = True
                     clean.append(boss)
                     if uses_channels(category) and x.get("channel") not in CHANNELS:
-                        key = (item_profile(boss), category, name.casefold(), boss["kind"])
+                        key = (item_profile(boss), channel_region(category), normalized(name), normalized(boss["kind"]))
                         if key not in channel2_keys:
                             clean.append(clone_for_channel(boss, CHANNELS[1]))
                             channel2_keys.add(key)
@@ -1113,12 +1115,24 @@ try {
                 "channel": CHANNELS[0] if uses_channels(category) else "",
                 "floor": FLOORS[0] if category == FOLKVANGR else "",
                 "end": 0, "warned_for": 0, "finished_for": 0, "last_kill": 0}
-        self.bosses.append(boss)
+        # Create only missing placements; keep every existing timer untouched.
+        matching = [b for b in self.profile_bosses()
+                    if normalized(b.get('name', '')) == normalized(name)
+                    and normalized(b.get('kind', 'Boss')) == normalized(kind)
+                    and (channel_region(b.get('category')) == channel_region(category)
+                         if uses_channels(category) else b.get('category') == category)]
         if uses_channels(category):
-            self.bosses.append(clone_for_channel(boss, CHANNELS[1]))
+            missing = [c for c in CHANNELS if c not in {b.get('channel') for b in matching}]
+            added = [boss if c == CHANNELS[0] else clone_for_channel(boss, c) for c in missing]
         elif category == FOLKVANGR:
-            for floor in FLOORS[1:]:
-                self.bosses.append(clone_for_floor(boss, floor))
+            missing = [f for f in FLOORS if f not in {b.get('floor') for b in matching}]
+            added = [boss if f == FLOORS[0] else clone_for_floor(boss, f) for f in missing]
+        else:
+            added = [boss]
+        if not added:
+            messagebox.showinfo('Boss já cadastrado', 'Este boss já está cadastrado em todos os pisos ou canais desta conta.', parent=self)
+            return
+        self.bosses.extend(added)
         self.name_entry.delete(0, "end")
         self.minutes_entry.delete(0, "end")
         if "boss_kind_select" in self.__dict__:

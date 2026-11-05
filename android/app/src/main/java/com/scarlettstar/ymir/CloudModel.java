@@ -36,7 +36,34 @@ public final class CloudModel {
         }
         Set<String> ids=new HashSet<>();out.keys().forEachRemaining(k->{if(k.startsWith("p:"))ids.add(k.substring(2));});
         List<String> all=new ArrayList<>();out.keys().forEachRemaining(all::add);for(String k:all)if(!k.startsWith("p:")&&!ids.contains(TimerModel.profile(out.getJSONObject(k))))out.remove(k);
+        collapseChannels(out,conflicts);
         return new Merged(out,conflicts);
+    }
+    static String normal(String text){return java.text.Normalizer.normalize(text.toLowerCase(java.util.Locale.ROOT),java.text.Normalizer.Form.NFKD).replaceAll("\\p{M}","").trim();}
+    static String channelRegion(String region){String key=normal(region);if(key.startsWith("bosses "))key=key.substring(7).trim();if(key.equals("myrkheimr"))return "Bosses Myrkheimr";if(key.equals("tumulo do rei"))return "Túmulo do Rei";return "";}
+    public static String channelKey(JSONObject boss)throws JSONException {
+        String region=channelRegion(boss.optString("category")),channel=boss.optString("channel");if(region.isEmpty()||(!channel.equals("CHN 1")&&!channel.equals("CHN 2")))return "";
+        return canonical(new JSONArray().put(TimerModel.profile(boss)).put(region).put(normal(boss.optString("name"))).put(normal(boss.optString("kind","Boss"))).put(channel));
+    }
+    static JSONArray cleanSamples(JSONArray samples)throws JSONException {
+        java.util.Map<Double,JSONObject> valid=new java.util.TreeMap<>();
+        if(samples!=null)for(int i=0;i<samples.length();i++){JSONObject pair=samples.optJSONObject(i);if(pair==null)continue;double kill=pair.optDouble("killed_at",0),spawn=pair.optDouble("spawned_at",0);if(!Double.isFinite(kill)||!Double.isFinite(spawn)||kill<=0||spawn<=kill||spawn-kill>604800)continue;if(!valid.containsKey(kill))valid.put(kill,new JSONObject().put("killed_at",kill).put("spawned_at",spawn));}
+        JSONArray out=new JSONArray();int skip=Math.max(0,valid.size()-20),i=0;for(JSONObject pair:valid.values())if(i++>=skip)out.put(pair);return out;
+    }
+    static int compareChannelRows(JSONObject a,JSONObject b)throws JSONException {
+        int n=Double.compare(a.optDouble("last_kill",0),b.optDouble("last_kill",0));if(n!=0)return n;
+        n=Integer.compare(cleanSamples(a.optJSONArray("respawn_samples")).length(),cleanSamples(b.optJSONArray("respawn_samples")).length());if(n!=0)return n;
+        n=Boolean.compare(a.optBoolean("favorite"),b.optBoolean("favorite"));return n!=0?n:a.getString("id").compareTo(b.getString("id"));
+    }
+    static void collapseChannels(JSONObject records,JSONArray conflicts)throws JSONException {
+        java.util.Map<String,java.util.List<JSONObject>> groups=new java.util.LinkedHashMap<>();java.util.Iterator<String> keys=records.keys();while(keys.hasNext()){String k=keys.next();if(!k.startsWith("b:"))continue;JSONObject b=records.getJSONObject(k);String identity=channelKey(b);if(!identity.isEmpty())groups.computeIfAbsent(identity,unused->new java.util.ArrayList<>()).add(b);}
+        for(java.util.List<JSONObject> rows:groups.values()){
+            if(rows.size()<2)continue;JSONObject winner=rows.get(0);for(JSONObject row:rows)if(compareChannelRows(row,winner)>0)winner=row;
+            java.util.List<JSONObject> pairs=new java.util.ArrayList<>();boolean favorite=false,myrk=false,tomb=false;
+            for(JSONObject row:rows){JSONArray samples=cleanSamples(row.optJSONArray("respawn_samples"));for(int i=0;i<samples.length();i++)pairs.add(samples.getJSONObject(i));favorite|=row.optBoolean("favorite");myrk|=row.optBoolean("myrk_variable_v1");tomb|=row.optBoolean("tomb_channel_copy_v1");}
+            pairs.sort((a,b)->{int n=Double.compare(b.optDouble("killed_at"),a.optDouble("killed_at"));return n!=0?n:Double.compare(b.optDouble("spawned_at"),a.optDouble("spawned_at"));});JSONArray all=new JSONArray();for(JSONObject pair:pairs)all.put(pair);winner.put("respawn_samples",cleanSamples(all));if(favorite)winner.put("favorite",true);if(myrk)winner.put("myrk_variable_v1",true);if(tomb)winner.put("tomb_channel_copy_v1",true);
+            for(JSONObject row:rows)if(row!=winner){String key="b:"+canonical(new JSONArray().put(TimerModel.profile(row)).put(row.getString("id")));records.remove(key);conflicts.put(new JSONObject().put("key",key).put("local",row).put("reason","Mesmo boss na mesma conta, região e canal"));}
+        }
     }
     public static void validatePairing(JSONObject base,JSONObject local,JSONObject remote)throws JSONException {
         java.util.Iterator<String> keys=local.keys();while(keys.hasNext()){
