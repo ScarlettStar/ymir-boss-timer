@@ -37,6 +37,14 @@ class CatalogRepairTests(unittest.TestCase):
         self.assertFalse(any(b['id']=='wrong-tomb' for b in repaired))
         self.assertEqual(repair_folk_catalog(repaired,history)[0],repaired)
 
+    def test_folk_observations_keep_valid_kill_order_when_cycles_overlap(self):
+        rows=catalog();source=next(b for b in rows if b['name']=='Guerreiro' and b['floor']=='P1')
+        source.update(last_kill=100,respawn_samples=[{'killed_at':10,'spawned_at':1000}])
+        rows.append(boss('duplicate',respawn_samples=[{'killed_at':20,'spawned_at':500}]))
+        repaired,_=repair_folk_catalog(rows,[])
+        samples=next(b for b in repaired if b['id']==source['id'])['respawn_samples']
+        self.assertEqual([s['killed_at'] for s in samples],[10,20])
+
     def test_preserve_reset_and_do_not_recreate_countdown_from_history(self):
         rows=catalog();source=next(b for b in rows if b['name']=='Escald' and b['floor']=='P2');source.update(floor='P1',last_kill=1000,end=0)
         history=[dict(boss_id=source['id'],category=FOLK,floor='P2',killed_at=1000,respawn_at=8200)]

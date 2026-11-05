@@ -90,7 +90,7 @@ def repair_folk_catalog(bosses, history):
                 for b in entries:
                     for sample in clean_samples(b.get('respawn_samples', [])):
                         samples[(sample['killed_at'], sample['spawned_at'])] = sample
-                winner['respawn_samples'] = sorted(samples.values(), key=lambda s: s['spawned_at'])[-20:]
+                winner['respawn_samples'] = clean_samples(sorted(samples.values(), key=lambda s: (s['killed_at'], s['spawned_at']), reverse=True))
                 if any(b.get('favorite') for b in entries):
                     winner['favorite'] = True
                 winner.update(name=role, category=FOLK, floor=floor, channel='')
