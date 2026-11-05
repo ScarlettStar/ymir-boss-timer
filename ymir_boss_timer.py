@@ -27,7 +27,7 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.6.1"
+APP_VERSION = "3.6.2"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS
@@ -107,7 +107,7 @@ def format_seconds(seconds):
 
 
 from ymir_cloud_ui import CloudMixin
-from ymir_catalog import CatalogMixin, normalized
+from ymir_catalog import CatalogMixin, normalized, ordered_folk_bosses
 
 
 class BossTimerApp(CatalogMixin, CloudMixin, YmirVisualMixin, tk.Tk):
@@ -1018,6 +1018,8 @@ try {
                     if not subgroup and not compact:
                         tk.Label(parent, text="Nenhum boss neste local", bg=BG, fg=MUTED,
                                  anchor="w", font=("Segoe UI", 9)).pack(fill="x", padx=26, pady=(0, 8))
+                    if category == FOLKVANGR:
+                        subgroup = ordered_folk_bosses(subgroup)
                     for boss in subgroup:
                         make_card(boss, nested=True)
             else:

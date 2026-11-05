@@ -59,4 +59,21 @@ public class AndroidTimerTest {
             ByteArrayOutputStream backup=new ByteArrayOutputStream();Store.exportState(store.read(),backup);JSONObject decoded=Store.parseBackup(new ByteArrayInputStream(backup.toByteArray()));assertFalse(decoded.toString().contains("private-test-token"));
         }finally{CloudVault.clear(c);}
     }
+    private java.util.List<android.view.View> views(android.view.View root){
+        java.util.List<android.view.View> all=new java.util.ArrayList<>();all.add(root);for(int i=0;i<all.size();i++){android.view.View v=all.get(i);if(v instanceof android.view.ViewGroup){android.view.ViewGroup group=(android.view.ViewGroup)v;for(int j=0;j<group.getChildCount();j++)all.add(group.getChildAt(j));}}return all;
+    }
+    private android.widget.Button findButton(String contains){for(android.view.View v:views(activity.getActivity().getWindow().getDecorView()))if(v instanceof android.widget.Button&&((android.widget.Button)v).getText().toString().contains(contains))return (android.widget.Button)v;throw new AssertionError("Button not found: "+contains);}
+    private java.util.List<String> visibleRoleNames(){java.util.List<String> result=new java.util.ArrayList<>();java.util.Set<String> roles=new java.util.HashSet<>(java.util.Arrays.asList("Guerreiro","Lanceiro","Maga","Escald"));for(android.view.View v:views(activity.getActivity().getWindow().getDecorView()))if(v instanceof android.widget.TextView&&!(v instanceof android.widget.Button)&&!(v instanceof android.widget.EditText)){String text=((android.widget.TextView)v).getText().toString();if(roles.contains(text))result.add(text);}return result;}
+    private void screen(String name)throws Exception {try(android.os.ParcelFileDescriptor fd=InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("screencap -p /sdcard/Download/"+name);java.io.InputStream input=new android.os.ParcelFileDescriptor.AutoCloseInputStream(fd)){byte[] bytes=new byte[8192];while(input.read(bytes)!=-1){/* Wait for the screenshot command to finish. */}}}
+    @Test public void regionGroupsRoleOrderCollapseAndSearchPreserveAllTimerData()throws Exception {
+        Context c=context();Instrumentation instrumentation=InstrumentationRegistry.getInstrumentation();JSONObject state=Store.empty();JSONArray all=state.getJSONArray("bosses");
+        for(String floor:new String[]{"P1","P2","P3","P4 UNIVERSAL"})for(String role:new String[]{"Escald","Maga","Guerreiro","Lanceiro"}){JSONObject b=TimerModel.newBoss(role,120,TimerModel.REGIONS[2],"","Boss","default",false);b.put("floor",floor);TimerModel.kill(b,System.currentTimeMillis()/1000.0);all.put(b);}
+        all.put(TimerModel.newBoss("Myrk teste",60,TimerModel.REGIONS[1],"CHN 1","Boss","default",true));all.put(TimerModel.newBoss("Myrk teste",60,TimerModel.REGIONS[1],"CHN 2","Boss","default",true));all.put(TimerModel.newBoss("Chefe do labirinto",60,"Labirinto Albit","","Boss","default",true));
+        new Store(c).write(state);c.getSharedPreferences("catalog-layout",0).edit().clear().commit();
+        instrumentation.runOnMainSync(()->{findButton("Bosses").performClick();assertEquals(16,visibleRoleNames().size());for(int i=0;i<16;i++)assertEquals(new String[]{"Guerreiro","Lanceiro","Maga","Escald"}[i%4],visibleRoleNames().get(i));findButton("Fólkvangr").performClick();assertEquals(0,visibleRoleNames().size());});
+        assertTrue(CloudModel.equal(state,new Store(c).read()));
+        instrumentation.runOnMainSync(()->{android.widget.EditText search=null;for(android.view.View v:views(activity.getActivity().getWindow().getDecorView()))if(v instanceof android.widget.EditText&&"Buscar boss, região ou canal".equals(((android.widget.EditText)v).getHint().toString()))search=(android.widget.EditText)v;assertNotNull(search);search.setText("Maga");assertEquals(java.util.Arrays.asList("Maga","Maga","Maga","Maga"),visibleRoleNames());search.setText("");assertEquals(0,visibleRoleNames().size());findButton("Myrkheimr").performClick();});
+        instrumentation.waitForIdleSync();screen("ymir-regions.png");
+        instrumentation.runOnMainSync(()->findButton("Fólkvangr").performClick());instrumentation.waitForIdleSync();screen("ymir-folk-order.png");assertTrue(CloudModel.equal(state,new Store(c).read()));
+    }
 }

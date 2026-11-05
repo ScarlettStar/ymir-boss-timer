@@ -24,6 +24,15 @@ def role_of(boss):
     return next((role for role in ROLES if normalized(boss.get('name', '')) == normalized(role)), None)
 
 
+def ordered_folk_bosses(bosses):
+    """Guerreiro → Lanceiro → Maga → Escald, independent of UUIDs and favorites."""
+    def key(boss):
+        name = normalized(boss.get('name', ''))
+        rank = next((i for i, role in enumerate(ROLES) if normalized(role) == name), len(ROLES))
+        return rank, name
+    return sorted(bosses, key=key)
+
+
 def repair_folk_catalog(bosses, history):
     """Use explicit historical floors; retain latest cycle (including intentional reset).
 
