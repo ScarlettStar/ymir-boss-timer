@@ -46,4 +46,17 @@ public class AndroidTimerTest {
         JSONObject saved=store.read().getJSONArray("bosses").getJSONObject(0);
         assertEquals(saved.getDouble("end"),saved.getDouble("finished_for"),0);
     }
+    @Test public void cloudSessionEncryptionAndReceivedTimerRemainLocalAfterReopen()throws Exception {
+        Context c=context();Store store=new Store(c);JSONObject original=Store.empty();
+        JSONObject boss=TimerModel.newBoss("Chefe recebido",60,TimerModel.REGIONS[1],"CHN 2","Boss","default",true);boss.put("id","cloud-test");TimerModel.kill(boss,System.currentTimeMillis()/1000.0);original.getJSONArray("bosses").put(boss);store.write(original);
+        JSONObject received=CloudModel.copy(original);received.getJSONArray("bosses").getJSONObject(0).put("end",boss.getDouble("end")+300);
+        JSONObject updated=CloudModel.apply(original,CloudModel.entities(received));store.importState(updated);AlarmScheduler.reschedule(c,updated);
+        assertEquals(received.getJSONArray("bosses").getJSONObject(0).getDouble("end"),new Store(c).read().getJSONArray("bosses").getJSONObject(0).getDouble("end"),0);
+        JSONObject session=new JSONObject().put("project","demo-ymir-test").put("api_key","not-a-real-key-1234567890").put("uid","test-user").put("refresh","private-test-token").put("email","test@example.invalid");
+        try{
+            CloudVault.write(c,session);assertEquals("private-test-token",CloudVault.read(c).getString("refresh"));
+            java.nio.file.Path file=new File(c.getNoBackupFilesDir(),"cloud-session.bin").toPath();String ciphertext=new String(java.nio.file.Files.readAllBytes(file),java.nio.charset.StandardCharsets.UTF_8);assertFalse(ciphertext.contains("private-test-token"));
+            ByteArrayOutputStream backup=new ByteArrayOutputStream();Store.exportState(store.read(),backup);JSONObject decoded=Store.parseBackup(new ByteArrayInputStream(backup.toByteArray()));assertFalse(decoded.toString().contains("private-test-token"));
+        }finally{CloudVault.clear(c);}
+    }
 }

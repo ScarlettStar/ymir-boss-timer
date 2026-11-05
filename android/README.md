@@ -1,4 +1,4 @@
-# Ymir Android 0.1 — prévia independente
+# Ymir Android 0.2 — prévia com nuvem gratuita
 
 App Android nativo, Android 8+ (API 26), com notificações agendadas no próprio celular. Não depende do PC ligado ou de conexão com a internet após registrar/importar os horários.
 
@@ -17,10 +17,10 @@ App Android nativo, Android 8+ (API 26), com notificações agendadas no própri
 1. Baixe o APK no artefato `Ymir-Android-preview` da execução Android no GitHub. É uma compilação de teste assinada com a chave debug do runner, sem Play Store e sem atualizações automáticas.
 2. Abra o APK no celular e permita a instalação por essa origem quando o Android solicitar.
 3. Em Ajustes, permita notificações e alarmes exatos. Configure som/vibração e faça o teste de 10 segundos com a tela do app fechada.
-4. Cadastre seus bosses ou, no Windows, Ferramentas → Backup → Exportar; transfira o ZIP ao celular e importe em Ajustes.
+4. Conecte a nuvem gratuita em Ajustes para receber contas e bosses do PC. Como alternativa offline, cadastre-os ou importe um backup ZIP.
 5. No celular, registre Matei e depois Reapareceu somente quando observar o nascimento real. Não há interação automática com o jogo.
 
-**Não há sincronização automática ou login nesta prévia.** Alterações feitas no PC depois da exportação não chegam ao celular, e vice-versa. Não há backend, coleta de dados ou permissão INTERNET. A etapa de sincronização requer um serviço de autenticação/dados na nuvem e política de conflitos, antes de habilitar marcações compartilhadas.
+**Sincronização opcional:** use o mesmo login no Windows e no Android; a configuração pública do projeto já vem no app. Veja [o passo a passo da nuvem](../cloud/README.md). Esta versão solicita INTERNET somente para Authentication/Firestore. Alertas continuam locais; abrir o app consulta os horários imediatamente e o sistema tenta consultas periódicas em segundo plano. O Android pode adiar essas consultas. Nenhuma configuração de faturamento é criada.
 
 Alarmes dependem do celular ligado e das permissões/configurações do Android. Sem acesso a alarmes exatos usa agendamento aproximado e informa na tela. Economia de bateria/Doze/fabricante podem atrasar avisos, mesmo com permissão. Forçar parada impede entrega até reabrir. Alertas encerrados há mais de 15 minutos não são repetidos ao reabrir/reiniciar/importar. Privacidade de conteúdo na tela bloqueada é configurada pelo Android.
 
@@ -31,3 +31,10 @@ O APK debug é destinado a teste inicial. Uma chave de assinatura estável priva
 JDK 17, SDK 35 e Gradle 8.11.1. Abra `android/` no Android Studio ou use `gradle testDebugUnitTest lintDebug assembleDebug`. `connectedDebugAndroidTest` verifica backup, isolamento e entrega real de notificação pelo AlarmManager com a Activity em segundo plano, em emulador API 35.
 
 Fontes oficiais: [alarmes](https://developer.android.com/develop/background-work/services/alarms), [permissão de notificações](https://developer.android.com/develop/ui/views/notifications/notification-permission), [AGP 8.9](https://developer.android.com/build/releases/agp-8-9-0-release-notes).
+
+
+## Assinatura da distribuição 0.2.1
+
+O APK entregue à proprietária é reassinado com uma chave privada estável fora do repositório e verificado com `apksigner`. A recuperação da chave é privada e não acompanha os instaladores nem os artefatos públicos. Os APKs de CI continuam sendo compilações de teste com assinatura debug temporária; não usá-los como atualizações da distribuição assinada.
+
+A prévia 0.1 usa uma assinatura de teste diferente: exporte um backup em Ajustes antes de remover essa prévia e instalar a 0.2.1 assinada. Depois importe o ZIP se necessário. Atualizações futuras da distribuição devem usar a mesma chave privada; não regenerá-la. Alterar somente a assinatura não muda o código executado e testado no emulador.

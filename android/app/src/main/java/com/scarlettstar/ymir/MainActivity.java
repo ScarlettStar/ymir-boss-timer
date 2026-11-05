@@ -27,8 +27,12 @@ public final class MainActivity extends Activity {
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Map<TextView,JSONObject> timers=new LinkedHashMap<>();
     private boolean healthy=true;
+    private long nextCloud=0;
+    private TextView cloudStatus;
     private final Runnable clock=new Runnable() {
         @Override public void run() {
+            if(System.currentTimeMillis()>nextCloud){nextCloud=System.currentTimeMillis()+60000;CloudSync.sync(MainActivity.this,false,ok->{if(ok)render();else if(cloudStatus!=null)cloudStatus.setText(CloudSync.status);});}
+            if(cloudStatus!=null)cloudStatus.setText(CloudSync.status);
             double now=System.currentTimeMillis()/1000.0;
             for(Map.Entry<TextView,JSONObject> entry:timers.entrySet())entry.getKey().setText(countdown(entry.getValue(),now));
             handler.postDelayed(this,1000);
@@ -63,7 +67,7 @@ public final class MainActivity extends Activity {
         // Insets API 30 is guarded separately for Android 8–10.
         else root.setFitsSystemWindows(true);
         TextView title=label("⚔  YMIR",28,ACCENT);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("BOSS TIMER  •  ANDROID PREVIEW",11,MUTED));
+        root.addView(label("BOSS TIMER  •  ANDROID 0.2.1 NUVEM",11,MUTED));
         accountsBar=column();root.addView(accountsBar);
         LinearLayout navigation=row();for(String name:new String[]{"Bosses","Próximos","Contas","Ajustes"})rowButton(navigation,name,()->{tab=name;render();});root.addView(navigation);
         ScrollView scroll=new ScrollView(this);body=column();scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
@@ -72,11 +76,12 @@ public final class MainActivity extends Activity {
     }
     @Override public void onResume() {
         super.onResume();if(!healthy)return;
+        nextCloud=0;CloudSync.schedule(this);
         try { state=store.read();AlarmScheduler.reschedule(this,state);if(root!=null)render(); }catch(Exception e){error(e);}
         handler.removeCallbacks(clock);handler.post(clock);
     }
     @Override public void onPause() { handler.removeCallbacks(clock);super.onPause(); }
-    private void save(JSONObject next) throws Exception { store.write(next);state=next;AlarmScheduler.reschedule(this,next);render(); }
+    private void save(JSONObject next) throws Exception { store.write(next);state=next;AlarmScheduler.reschedule(this,next);render();CloudSync.sync(this,true,ok->{if(ok)render();}); }
     private void render() {
         if(body==null)return;
         try {
@@ -173,9 +178,10 @@ public final class MainActivity extends Activity {
         });
         JSONArray profiles=state.getJSONObject("profiles").getJSONArray("profiles");double now=System.currentTimeMillis()/1000.0;
         for(int i=0;i<profiles.length();i++){JSONObject p=profiles.getJSONObject(i);int active=0,ready=0;for(JSONObject b:TimerModel.visible(state.getJSONArray("bosses"),p.getString("id"),"Todos")){double end=b.optDouble("end",0);if(end>now)active++;else if(end>0)ready++;}body.addView(label(p.getString("name")+" / "+p.optString("server","")+"\n"+active+" timers ativos • "+ready+" prontos/previstos",17,TEXT));}
-        body.addView(label("As contas são locais deste celular. Esta prévia ainda não sincroniza automaticamente com o PC.",14,WARNING));
+        body.addView(label("Conecte o mesmo login em Ajustes → Nuvem no celular e no PC para sincronizar estas contas.",14,WARNING));
     }
     private void renderSettings() throws Exception {
+        renderCloudSettings();
         body.addView(label("ALERTAS NO CELULAR",18,ACCENT));
         body.addView(label((AlarmReceiver.notificationsEnabled(this)?"✓ Notificações permitidas":"⚠ Notificações bloqueadas")+"\n"+(AlarmScheduler.exact(this)?"✓ Agendamento exato permitido":"⚠ Sem acesso a alarmes exatos; avisos podem atrasar"),15,WARNING));
         addButton(body,"Permitir notificações",()->{if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},1);else notificationSettings();});
@@ -186,7 +192,24 @@ public final class MainActivity extends Activity {
         body.addView(label("BACKUP DO PC / ANDROID",18,PURPLE));
         addButton(body,"Importar backup ZIP…",()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/zip").addCategory(Intent.CATEGORY_OPENABLE),20));
         addButton(body,"Exportar backup ZIP…",()->startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/zip").putExtra(Intent.EXTRA_TITLE,"Ymir-Android-backup.zip").addCategory(Intent.CATEGORY_OPENABLE),21));
-        body.addView(label("Importar substitui os dados deste celular após confirmação e cria uma cópia local de segurança. No PC: Ferramentas → Backup → Exportar. Leve o ZIP ao celular. O Windows não é alterado.\n\nPRÉVIA INDEPENDENTE\nO PC pode ficar desligado: os horários já registrados/importados ficam no Android. Marcações posteriores no PC não chegam automaticamente aqui.\n\nPermita notificações e alarmes. O Android ainda pode atrasar avisos por economia de bateria ou configuração do fabricante. Forçar parada desativa os alarmes até reabrir o app. Esta prévia não tem atualização automática nem sincronização em nuvem.",14,MUTED));
+        body.addView(label("Importar substitui os dados deste celular após confirmação e cria uma cópia local de segurança. No PC: Ferramentas → Backup → Exportar. Leve o ZIP ao celular. O Windows não é alterado.\n\nALERTAS LOCAIS + NUVEM OPCIONAL\nO PC pode ficar desligado: os horários já registrados/importados ficam no Android. Com a nuvem conectada, abra o app para receber os últimos horários do PC. A sincronização em segundo plano é periódica e pode atrasar.\n\nPermita notificações e alarmes. O Android ainda pode atrasar avisos por economia de bateria ou configuração do fabricante. Forçar parada desativa os alarmes até reabrir o app. Esta prévia não tem atualização automática. Configure a nuvem gratuita acima para sincronizar os aparelhos.",14,MUTED));
+    }
+    private void renderCloudSettings() {
+        body.addView(label("SINCRONIZAR PC E CELULAR",18,ACCENT));
+        cloudStatus=label(CloudSync.status,14,WARNING);body.addView(cloudStatus);
+        body.addView(label("Use o mesmo login do Ymir Boss Timer nos dois aparelhos. Contas, bosses, timers, histórico e médias são compartilhados. Alertas e aparência ficam neste aparelho. Abra o app para sincronizar imediatamente; em segundo plano o Android pode adiar a consulta.",14,MUTED));
+        addButton(body,CloudSync.connected(this)?"Alterar conexão / login":"Conectar à nuvem",()->{
+            JSONObject saved=CloudSync.settings(this);LinearLayout fields=column();fields.setPadding(dp(18),0,dp(18),0);
+            EditText email=input("E-mail",saved.optString("email"),false),password=input("Senha do Ymir Boss Timer","",false);
+            password.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);email.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+            for(View v:new View[]{email,password})fields.addView(v);
+            CheckBox create=new CheckBox(this);create.setText("Criar novo login");create.setTextColor(TEXT);fields.addView(create);
+            new AlertDialog.Builder(this).setTitle("Conectar dados à nuvem").setMessage("Todas as contas locais serão associadas a este login. Em conflito, a alteração já na nuvem tem prioridade e a alteração local fica guardada em uma cópia.").setView(fields).setNegativeButton("Cancelar",null).setPositiveButton("Conectar",(d,w)->{
+                try{String p=CloudConfig.PROJECT,a=CloudConfig.API_KEY,e=email.getText().toString(),pw=password.getText().toString();CloudSync.validateConfig(p,a);if(e.trim().isEmpty()||pw.length()<6)throw new IllegalArgumentException("Informe e-mail e senha de pelo menos 6 caracteres.");password.setText("");CloudSync.login(this,p,a,e,pw,create.isChecked(),ok->{render();if(!ok)message(CloudSync.status);});}catch(Exception ex){error(ex);}
+            }).show();
+        });
+        addButton(body,"Sincronizar agora",()->CloudSync.sync(this,true,ok->{render();if(!ok)message(CloudSync.status);}));
+        addButton(body,"Desconectar este aparelho",()->{CloudSync.disconnect(this);render();});
     }
     private void notificationSettings() {startActivity(new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName()).putExtra(Settings.EXTRA_CHANNEL_ID,AlarmReceiver.CHANNEL));}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] grants){super.onRequestPermissionsResult(request,permissions,grants);render();}
