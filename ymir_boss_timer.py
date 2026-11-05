@@ -1260,12 +1260,6 @@ try {
         tk.Checkbutton(secondary, text="Variável", variable=variable,
                        command=lambda: self.set_variable_respawn(boss, variable.get()), bg=PANEL,
                        fg=TEXT, selectcolor=BG, activebackground=PANEL, activeforeground=TEXT).pack(side="left")
-        category_select = ttk.Combobox(secondary, values=self.category_choices(), state="readonly",
-                                       width=16, font=("Segoe UI", 8))
-        category_select.set(boss.get("category", CATEGORIES[0]))
-        category_select.pack(side="left", padx=(0, 6))
-        category_select.bind("<<ComboboxSelected>>",
-                             lambda _e: self.change_category(boss, category_select.get()))
 
     def matching_respawn_copies(self, boss):
         """Cópias com mesmo nome, na mesma região, mas IDs e timers próprios."""
@@ -1392,25 +1386,6 @@ try {
                   padx=10).pack(side="left", padx=10)
         win.bind("<Return>", lambda _event: save_new_time())
         win.bind("<Escape>", lambda _event: win.destroy())
-
-    def change_category(self, boss, category):
-        if category not in self.category_choices() or boss.get("category") == category:
-            return
-        boss["category"] = category
-        if channel_region(category) == TOMB_REGION:
-            boss["tomb_channel_copy_v1"] = True
-        if channel_region(category) == MYRKHEIMR:
-            boss["variable_respawn"] = True
-            boss["myrk_variable_v1"] = True
-        boss["channel"] = CHANNELS[0] if uses_channels(category) else ""
-        boss["floor"] = FLOORS[0] if category == FOLKVANGR else ""
-        if uses_channels(category):
-            self.bosses.append(clone_for_channel(boss, CHANNELS[1]))
-        elif category == FOLKVANGR:
-            for floor in FLOORS[1:]:
-                self.bosses.append(clone_for_floor(boss, floor))
-        self.save()
-        self.render()
 
     def sound(self):
         options = self.__dict__.get('_sound_options', self.options_for_alert())
