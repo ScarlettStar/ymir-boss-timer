@@ -155,3 +155,11 @@ class CatalogRepairUITests(unittest.TestCase):
                 again=ymir.BossTimerApp()
                 try:self.assertEqual(again.bosses,first)
                 finally:again.destroy()
+
+class CatalogPresentationTests(unittest.TestCase):
+    def test_folk_card_order_ignores_uuid_deadline_and_favorite_without_mutating_records(self):
+        from ymir_catalog import ordered_folk_bosses
+        rows=[boss('z',name='Escald',favorite=True,end=1),boss('a',name='Maga',end=2),boss('y',name='Guerreiro',end=20000),boss('b',name='Lanceiro',end=0)]
+        before=copy.deepcopy(rows)
+        self.assertEqual([b['name'] for b in ordered_folk_bosses(rows)],list(ROLES))
+        self.assertEqual(rows,before)

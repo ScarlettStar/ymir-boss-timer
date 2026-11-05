@@ -77,6 +77,8 @@ jobs:
             sleep 3
             adb shell screencap -p /sdcard/ymir-android.png
             adb pull /sdcard/ymir-android.png ../ymir-android.png
+            adb pull /sdcard/Download/ymir-regions.png ../ymir-regions.png
+            adb pull /sdcard/Download/ymir-folk-order.png ../ymir-folk-order.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -84,3 +86,5 @@ jobs:
           path: |
             android/app/build/reports/androidTests/
             ymir-android.png
+            ymir-regions.png
+            ymir-folk-order.png

@@ -67,7 +67,7 @@ public final class MainActivity extends Activity {
         // Insets API 30 is guarded separately for Android 8–10.
         else root.setFitsSystemWindows(true);
         TextView title=label("⚔  YMIR",28,ACCENT);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("BOSS TIMER  •  ANDROID 0.2.2 NUVEM",11,MUTED));
+        root.addView(label("BOSS TIMER  •  ANDROID 0.3.0 NUVEM",11,MUTED));
         accountsBar=column();root.addView(accountsBar);
         LinearLayout navigation=row();for(String name:new String[]{"Bosses","Próximos","Contas","Ajustes"})rowButton(navigation,name,()->{tab=name;render();});root.addView(navigation);
         ScrollView scroll=new ScrollView(this);body=column();scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
@@ -106,10 +106,22 @@ public final class MainActivity extends Activity {
     }
     private void drawCards(LinearLayout container) throws Exception {
         List<JSONObject> bosses=TimerModel.visible(state.getJSONArray("bosses"),pid(),channel);int shown=0;
+        boolean grouped=tab.equals("Bosses");
+        if(grouped)bosses=CatalogLayout.ordered(bosses);
+        Map<String,Integer> regionCounts=new LinkedHashMap<>(),sectionCounts=new LinkedHashMap<>();
+        for(JSONObject b:bosses){if(!matchesQuery(b))continue;String r=CatalogLayout.region(b),k=catalogKey(r,CatalogLayout.section(b));regionCounts.put(r,regionCounts.getOrDefault(r,0)+1);sectionCounts.put(k,sectionCounts.getOrDefault(k,0)+1);}
+        String lastRegion=null,lastSection=null;
         for(JSONObject b:bosses) {
             if(tab.equals("Próximos") && b.optDouble("end",0)==0)continue;
-            if(!(b.getString("name")+" "+TimerModel.location(b)).toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT)))continue;
+            if(!matchesQuery(b))continue;
             shown++;
+            if(grouped){
+                String r=CatalogLayout.region(b),section=CatalogLayout.section(b);
+                if(!r.equals(lastRegion)){catalogHeader(container,r,"",regionCounts.get(r),false);lastRegion=r;lastSection=null;}
+                if(catalogCollapsed(r,""))continue;
+                if(!section.isEmpty()&&!section.equals(lastSection)){catalogHeader(container,r,section,sectionCounts.get(catalogKey(r,section)),true);lastSection=section;}
+                if(!section.isEmpty()&&catalogCollapsed(r,section))continue;
+            }
             LinearLayout card=column();card.setPadding(dp(14),dp(10),dp(14),dp(12));card.setBackground(surface(PANEL));
             LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,-2);layout.setMargins(0,dp(8),0,dp(4));container.addView(card,layout);
             card.addView(label(TimerModel.location(b)+" • "+b.optString("kind","Boss"),11,PURPLE));
@@ -123,6 +135,17 @@ public final class MainActivity extends Activity {
             LinearLayout actions=row();rowButton(actions,"Matei",()->kill(b));if(b.optBoolean("variable_respawn"))rowButton(actions,"Reapareceu",()->observe(b));rowButton(actions,"Opções",()->bossOptions(b));card.addView(actions);
         }
         if(shown==0)container.addView(label("Nenhum boss nesta visualização. Cadastre um boss ou importe seu backup do PC em Ajustes.",16,MUTED));
+    }
+    private boolean matchesQuery(JSONObject boss) {return CloudModel.normal(boss.optString("name")+" "+TimerModel.location(boss)).contains(CloudModel.normal(query));}
+    private String catalogKey(String region,String section) {return new JSONArray().put(pid()).put(region).put(section).toString();}
+    private boolean catalogCollapsed(String region,String section) {return query.trim().isEmpty()&&getSharedPreferences("catalog-layout",0).getBoolean(catalogKey(region,section),false);}
+    private void catalogHeader(LinearLayout container,String region,String section,int count,boolean nested) {
+        String title=section.isEmpty()?region:section,key=catalogKey(region,section);
+        boolean collapsed=catalogCollapsed(region,section);
+        Button header=button((collapsed?"▸ ":"▾ ")+title+" ("+count+")",()->{getSharedPreferences("catalog-layout",0).edit().putBoolean(key,!catalogCollapsed(region,section)).apply();render();});
+        header.setTextSize(nested?14:17);header.setTextColor(nested?PURPLE:ACCENT);header.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);header.setTypeface(null,Typeface.BOLD);
+        header.setEnabled(query.trim().isEmpty());header.setContentDescription(title+", "+count+" bosses, "+(collapsed?"recolhido":"expandido"));
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(nested?dp(12):0,dp(nested?4:12),0,dp(2));container.addView(header,params);
     }
     private String countdown(JSONObject b,double now) {
         double end=b.optDouble("end",0);if(end<=0)return "SEM CONTAGEM";
