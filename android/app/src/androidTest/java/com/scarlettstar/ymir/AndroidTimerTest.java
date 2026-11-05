@@ -31,10 +31,19 @@ public class AndroidTimerTest {
         if(Build.VERSION.SDK_INT>=31)instrumentation.getUiAutomation().executeShellCommand("appops set "+c.getPackageName()+" SCHEDULE_EXACT_ALARM allow").close();
         Thread.sleep(700);AlarmReceiver.channels(c);c.getSystemService(NotificationManager.class).cancelAll();
         instrumentation.runOnMainSync(()->activity.getActivity().moveTaskToBack(true));
-        AlarmScheduler.test(c);
+        Store store=new Store(c);JSONObject state=Store.empty();
+        JSONObject boss=TimerModel.newBoss("Guardião noturno",180,TimerModel.REGIONS[1],"CHN 2","Boss","default",true);
+        double now=System.currentTimeMillis()/1000.0;boss.put("last_kill",now).put("end",now+10);
+        state.getJSONArray("bosses").put(boss);state.getJSONObject("preferences").put("lead_seconds",0);
+        store.write(state);AlarmScheduler.reschedule(c,state);
+        String tag=TimerModel.key(boss);
         long until=System.currentTimeMillis()+25000;boolean found=false;
-        while(System.currentTimeMillis()<until){for(android.service.notification.StatusBarNotification n:c.getSystemService(NotificationManager.class).getActiveNotifications())if("test".equals(n.getTag()))found=true;if(found)break;Thread.sleep(500);}
+        while(System.currentTimeMillis()<until){for(android.service.notification.StatusBarNotification n:c.getSystemService(NotificationManager.class).getActiveNotifications())if(tag.equals(n.getTag()))found=true;if(found)break;Thread.sleep(500);}
         assertTrue("AlarmManager must deliver while Activity is backgrounded",found);
-        assertEquals("Ymir • teste de alerta",c.getSystemService(NotificationManager.class).getActiveNotifications()[0].getNotification().extras.getString(Notification.EXTRA_TITLE));
+        Notification notification=c.getSystemService(NotificationManager.class).getActiveNotifications()[0].getNotification();
+        assertTrue(notification.extras.getString(Notification.EXTRA_TITLE).contains("Guardião noturno"));
+        assertTrue(notification.extras.getString(Notification.EXTRA_TEXT).contains("CHN 2"));
+        JSONObject saved=store.read().getJSONArray("bosses").getJSONObject(0);
+        assertEquals(saved.getDouble("end"),saved.getDouble("finished_for"),0);
     }
 }
