@@ -234,6 +234,7 @@ class WorkspaceMixin:
         messagebox.showinfo("Túmulo • CHN 2", self.profile_identity() + "\n\n" + message, parent=self)
 
     def set_variable_respawn(self, boss, enabled):
+        boss["manual_updated_at"]=time.time()
         boss["variable_respawn"] = bool(enabled)
         killed_at, old_end = boss.get("last_kill", 0), boss.get("end", 0)
         if killed_at and old_end and boss.get("spawn_for") != killed_at:
@@ -318,3 +319,4 @@ class WorkspaceMixin:
                     fg=BG, pady=8).pack(fill="x", padx=18)
         win.bind("<Return>", lambda _e: submit())
         win.bind("<Escape>", lambda _e: win.destroy())
+

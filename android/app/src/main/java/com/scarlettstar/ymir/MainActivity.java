@@ -29,11 +29,18 @@ public final class MainActivity extends Activity {
     private boolean healthy=true;
     private long nextCloud=0;
     private TextView cloudStatus;
+    private long nextHunt=0;
+    private final Map<TextView,JSONObject> huntLabels=new LinkedHashMap<>();
     private final Runnable clock=new Runnable() {
         @Override public void run() {
             if(System.currentTimeMillis()>nextCloud){nextCloud=System.currentTimeMillis()+60000;CloudSync.sync(MainActivity.this,false,ok->{if(ok)render();else if(cloudStatus!=null)cloudStatus.setText(CloudSync.status);});}
             if(cloudStatus!=null)cloudStatus.setText(CloudSync.status);
+            if(tab.equals("Caça")&&System.currentTimeMillis()>=nextHunt){nextHunt=System.currentTimeMillis()+15000;HuntLive.refresh(MainActivity.this,()->{if(tab.equals("Caça"))render();});}
             double now=System.currentTimeMillis()/1000.0;
+            for(Map.Entry<TextView,JSONObject> entry:huntLabels.entrySet()){
+                JSONObject value=entry.getValue();long age=Math.max(0,(long)(now-value.optDouble("received_at",0)));
+                entry.getKey().setText(HuntLiveModel.badge(value,now)+" · última atualização há "+age+"s");
+            }
             for(Map.Entry<TextView,JSONObject> entry:timers.entrySet())entry.getKey().setText(countdown(entry.getValue(),now));
             handler.postDelayed(this,1000);
         }
@@ -67,16 +74,17 @@ public final class MainActivity extends Activity {
         // Insets API 30 is guarded separately for Android 8–10.
         else root.setFitsSystemWindows(true);
         TextView title=label("⚔  YMIR",28,ACCENT);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("BOSS TIMER  •  ANDROID 0.3.0 NUVEM",11,MUTED));
+        root.addView(label("BOSS TIMER  •  ANDROID 0.4.0 • CAÇA AO VIVO",11,MUTED));
         accountsBar=column();root.addView(accountsBar);
-        LinearLayout navigation=row();for(String name:new String[]{"Bosses","Próximos","Contas","Ajustes"})rowButton(navigation,name,()->{tab=name;render();});root.addView(navigation);
+        LinearLayout navigation=row();for(String name:new String[]{"Bosses","Próximos","Caça"})rowButton(navigation,name,()->{tab=name;nextHunt=0;render();});root.addView(navigation);
+        LinearLayout settingsNav=row();for(String name:new String[]{"Contas","Ajustes"})rowButton(settingsNav,name,()->{tab=name;render();});root.addView(settingsNav);
         ScrollView scroll=new ScrollView(this);body=column();scroll.addView(body);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         AlarmReceiver.channels(this);
         render();
     }
     @Override public void onResume() {
         super.onResume();if(!healthy)return;
-        nextCloud=0;CloudSync.schedule(this);
+        nextCloud=0;nextHunt=0;CloudSync.schedule(this);
         try { state=store.read();AlarmScheduler.reschedule(this,state);if(root!=null)render(); }catch(Exception e){error(e);}
         handler.removeCallbacks(clock);handler.post(clock);
     }
@@ -88,11 +96,12 @@ public final class MainActivity extends Activity {
             state=store.read();
             channel=account(state,pid()).optString("channel_view","Todos");
             if(!Arrays.asList("Todos","CHN 1","CHN 2").contains(channel))channel="Todos";
-            timers.clear();accountsBar.removeAllViews();body.removeAllViews();
+            timers.clear();huntLabels.clear();accountsBar.removeAllViews();body.removeAllViews();
             JSONArray profiles=state.getJSONObject("profiles").getJSONArray("profiles");List<String> labels=new ArrayList<>();int active=0;
             for(int i=0;i<profiles.length();i++) { JSONObject p=profiles.getJSONObject(i);labels.add(p.getString("name")+" / "+p.optString("server","sem servidor"));if(p.getString("id").equals(pid()))active=i; }
             Spinner selector=spinner(labels);selector.setSelection(active);accountsBar.addView(selector);
             selector.setOnItemSelectedListener(new SimpleSelection(){@Override public void selected(int i){try {String id=profiles.getJSONObject(i).getString("id");if(!id.equals(pid())){JSONObject next=store.read();next.getJSONObject("profiles").put("active",id);query="";save(next);}}catch(Exception e){error(e);}}});
+            if(tab.equals("Caça")){renderHunt();return;}
             if(tab.equals("Contas")){renderAccounts();return;}if(tab.equals("Ajustes")){renderSettings();return;}
             LinearLayout channels=row();for(String c:new String[]{"Todos","CHN 1","CHN 2"})rowButton(channels,(channel.equals(c)?"● ":"")+c,()->{try{JSONObject next=store.read();account(next,pid()).put("channel_view",c);save(next);}catch(Exception e){error(e);}});body.addView(channels);
             if(tab.equals("Bosses")) {
@@ -104,6 +113,32 @@ public final class MainActivity extends Activity {
             } else drawCards(body);
         }catch(Exception e){error(e);}
     }
+    private void renderHunt() throws Exception {
+        body.addView(label("CAÇA AO VIVO",22,ACCENT));
+        body.addView(label(HuntLive.status,13,MUTED));
+        int shown=0;double now=System.currentTimeMillis()/1000.0;
+        if(!CloudSync.connected(this)){body.addView(label("Entre em Ajustes → Nuvem com o mesmo login do Boss Auto.",16,WARNING));return;}
+        JSONArray liveRows=HuntLive.visibleRows(this);
+        for(int i=0;i<liveRows.length();i++){
+            JSONObject value=liveRows.getJSONObject(i);if(!value.getString("profile_id").equals(pid()))continue;shown++;
+            LinearLayout card=column();card.setPadding(dp(14),dp(10),dp(14),dp(12));card.setBackground(surface(PANEL));
+            LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,-2);layout.setMargins(0,dp(8),0,dp(5));body.addView(card,layout);
+            card.addView(label(value.optString("device_label","PC"),18,PURPLE));
+            TextView freshness=label(HuntLiveModel.badge(value,now),12,WARNING);card.addView(freshness);huntLabels.put(freshness,value);
+            card.addView(label(value.optString("boss").isEmpty()?"Sem alvo atual":value.optString("boss"),22,TEXT));
+            card.addView(label(value.optString("map")+" · Canal "+value.optString("channel","—"),14,MUTED));
+            card.addView(label(value.optString("stage"),15,ACCENT));
+            card.addView(label("Próximo: "+value.optString("next_visit","—"),14,TEXT));
+            card.addView(label(value.optString("reason"),13,MUTED));
+            card.addView(label(value.optString("health"),13,MUTED));
+            JSONObject stats=value.optJSONObject("stats");if(stats!=null)card.addView(label("Visitados: "+stats.optInt("bosses_visited")+" · Mortes estimadas: "+stats.optInt("combat_ended")+"\nPulados por player: "+stats.optInt("skipped_players")+" · Inconclusivos: "+stats.optInt("combat_inconclusive"),14,TEXT));
+            card.addView(label("Combate: "+Math.max(0,(int)value.optDouble("combat_seconds"))+"s · Sessão: "+Math.max(0,(int)value.optDouble("session_seconds")/60)+" min",12,MUTED));
+            JSONArray events=value.optJSONArray("events");if(events!=null&&events.length()>0){card.addView(label("ÚLTIMOS EVENTOS",12,PURPLE));for(int j=Math.max(0,events.length()-3);j<events.length();j++){JSONObject e=events.getJSONObject(j);card.addView(label(e.optString("boss")+" · C"+e.optInt("channel")+" · "+HuntLiveModel.eventLabel(e.optString("outcome")),12,MUTED));}}
+        }
+        if(shown==0)body.addView(label("Nenhuma atividade recebida nesta conta/servidor. Vincule a conta no Boss Auto do PC.",16,MUTED));
+        body.addView(label("Sem atualização recente não prova que o PC ou jogo parou. Esta tela só acompanha a atividade; não controla o computador.",12,WARNING));
+    }
+
     private void drawCards(LinearLayout container) throws Exception {
         List<JSONObject> bosses=TimerModel.visible(state.getJSONArray("bosses"),pid(),channel);int shown=0;
         boolean grouped=tab.equals("Bosses");
@@ -125,6 +160,8 @@ public final class MainActivity extends Activity {
             LinearLayout card=column();card.setPadding(dp(14),dp(10),dp(14),dp(12));card.setBackground(surface(PANEL));
             LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,-2);layout.setMargins(0,dp(8),0,dp(4));container.addView(card,layout);
             card.addView(label(TimerModel.location(b)+" • "+b.optString("kind","Boss"),11,PURPLE));
+            if(b.optInt("hunt_channel",0)>0)card.addView(label("Canal "+b.optInt("hunt_channel")+" · Boss Auto",12,PURPLE));
+            if(b.optString("kill_source").equals("auto_estimated"))card.addView(label("Morte estimada pelo automático · confirme no jogo",12,WARNING));
             TextView name=label(b.getString("name"),21,TEXT);name.setTypeface(null,Typeface.BOLD);card.addView(name);
             TextView time=label(countdown(b,System.currentTimeMillis()/1000.0),28,ACCENT);time.setTypeface(Typeface.MONOSPACE,Typeface.BOLD);card.addView(time);timers.put(time,b);
             if(b.optDouble("end",0)>0)card.addView(label((b.optBoolean("variable_respawn")?"Previsão: ":"Horário: ")+new SimpleDateFormat("dd/MM HH:mm:ss",Locale.getDefault()).format(new Date((long)(b.optDouble("end")*1000))),13,MUTED));
@@ -154,7 +191,7 @@ public final class MainActivity extends Activity {
     }
     @FunctionalInterface private interface BossEdit {void change(JSONObject next,JSONObject boss)throws Exception;}
     private void edit(JSONObject old,BossEdit change) {
-        try {JSONObject next=store.read();JSONObject boss=Store.find(next,TimerModel.profile(old),old.getString("id"));if(boss==null)throw new IllegalArgumentException("Boss removido.");change.change(next,boss);save(next);}catch(Exception e){error(e);}
+        try {JSONObject next=store.read();JSONObject boss=Store.find(next,TimerModel.profile(old),old.getString("id"));if(boss==null)throw new IllegalArgumentException("Boss removido.");change.change(next,boss);boss.put("manual_updated_at",System.currentTimeMillis()/1000.0);save(next);}catch(Exception e){error(e);}
     }
     private void kill(JSONObject old) {
         new AlertDialog.Builder(this).setTitle("Registrar morte?").setMessage(old.optString("name")+"\n"+TimerModel.location(old)+"\nA contagem deste boss será reiniciada.").setNegativeButton("Cancelar",null).setPositiveButton("Matei agora",(d,w)->edit(old,(next,b)->{
@@ -174,7 +211,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle(old.optString("name")).setItems(new String[]{"Zerar contagem","Editar minutos","Alternar fixo / variável","Remover boss"},(d,index)->{
             if(index==1){EditText minutes=input("Minutos",String.valueOf(old.optInt("minutes")),true);new AlertDialog.Builder(this).setTitle("Tempo de referência").setView(minutes).setNegativeButton("Cancelar",null).setPositiveButton("Salvar",(x,w)->edit(old,(next,b)->{int n=Integer.parseInt(minutes.getText().toString());if(n<1||n>10080)throw new IllegalArgumentException("Use de 1 a 10080 minutos.");b.put("minutes",n);if(b.optDouble("end",0)>System.currentTimeMillis()/1000.0)b.put("end",b.getDouble("last_kill")+TimerModel.duration(b)).put("warned_for",0).put("finished_for",0);})).show();return;}
             if(index==3){new AlertDialog.Builder(this).setTitle("Remover este boss?").setMessage("Apenas esta conta e canal serão alterados.").setNegativeButton("Cancelar",null).setPositiveButton("Remover",(x,w)->edit(old,(next,b)->{JSONArray all=next.getJSONArray("bosses");for(int i=0;i<all.length();i++)if(TimerModel.key(all.getJSONObject(i)).equals(TimerModel.key(b))){all.remove(i);break;}})).show();return;}
-            edit(old,(next,b)->{if(index==0)b.put("end",0).put("last_kill",0).put("spawn_for",0).put("warned_for",0).put("finished_for",0);else {b.put("variable_respawn",!b.optBoolean("variable_respawn"));if(b.optDouble("end",0)>System.currentTimeMillis()/1000.0)b.put("end",b.getDouble("last_kill")+TimerModel.duration(b)).put("warned_for",0).put("finished_for",0);}});
+            edit(old,(next,b)->{if(index==0)b.put("kill_source","manual").put("end",0).put("last_kill",0).put("spawn_for",0).put("warned_for",0).put("finished_for",0);else {b.put("variable_respawn",!b.optBoolean("variable_respawn"));if(b.optDouble("end",0)>System.currentTimeMillis()/1000.0)b.put("end",b.getDouble("last_kill")+TimerModel.duration(b)).put("warned_for",0).put("finished_for",0);}});
         }).show();
     }
     private EditText input(String hint,String value,boolean number) { EditText e=new EditText(this);e.setHint(hint);e.setText(value);e.setTextColor(TEXT);e.setHintTextColor(MUTED);e.setTextSize(15);e.setSingleLine(true);e.setInputType(number?android.text.InputType.TYPE_CLASS_NUMBER:android.text.InputType.TYPE_CLASS_TEXT);return e; }
@@ -245,3 +282,4 @@ public final class MainActivity extends Activity {
         }catch(Exception e){error(e);}
     }
 }
+

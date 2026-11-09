@@ -1,6 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    match /users/{uid}/automation/{device} {
+      allow get, list: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['schema','payload','receivedAt'])
+        && request.resource.data.schema == 1
+        && request.resource.data.payload is string
+        && request.resource.data.payload.size() <= 60000
+        && request.resource.data.receivedAt == request.time;
+      allow delete: if false;
+    }
     match /users/{uid}/sync/state {
       allow get: if request.auth != null && request.auth.uid == uid;
       allow create, update: if request.auth != null && request.auth.uid == uid
@@ -12,3 +22,4 @@ service cloud.firestore {
     }
   }
 }
+

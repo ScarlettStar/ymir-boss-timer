@@ -39,7 +39,7 @@ public final class TimerModel {
     }
     public static void kill(JSONObject boss, double now) throws JSONException {
         if (!Double.isFinite(now) || now <= 0) throw new IllegalArgumentException("Horário inválido.");
-        boss.put("last_kill", now).put("end", now+duration(boss)).put("spawn_for", 0).put("warned_for", 0).put("finished_for", 0);
+        boss.put("kill_source","manual").put("manual_updated_at",System.currentTimeMillis()/1000.0).put("last_kill", now).put("end", now+duration(boss)).put("spawn_for", 0).put("warned_for", 0).put("finished_for", 0);
     }
     public static void observe(JSONObject boss, double now) throws JSONException {
         double killed = boss.optDouble("last_kill", 0);
@@ -97,3 +97,4 @@ public final class TimerModel {
         state.getJSONObject("preferences");
     }
 }
+
