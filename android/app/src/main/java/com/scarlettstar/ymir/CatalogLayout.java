@@ -17,14 +17,15 @@ public final class CatalogLayout {
     public static String section(JSONObject boss) {
         String region=region(boss);
         if(region.equals(TimerModel.REGIONS[2]))return boss.optString("floor").isEmpty()?"Sem piso":boss.optString("floor");
-        if(!CloudModel.channelRegion(region).isEmpty())return boss.optString("channel").isEmpty()?"Sem canal":boss.optString("channel");
-        return !boss.optString("floor").isEmpty()?boss.optString("floor"):boss.optString("channel");
+        String channel=TimerModel.channelLabel(boss);
+        if(!channel.isEmpty())return channel;
+        if(!CloudModel.channelRegion(region).isEmpty())return "Sem canal";
+        return boss.optString("floor");
     }
     private static int regionRank(String region){int i=Arrays.asList(TimerModel.REGIONS).indexOf(region);return i<0?TimerModel.REGIONS.length:i;}
     private static int sectionRank(JSONObject b) {
         if(region(b).equals(TimerModel.REGIONS[2])){int i=FLOORS.indexOf(section(b));return i<0?FLOORS.size():i;}
-        if(!CloudModel.channelRegion(region(b)).isEmpty())return section(b).equals("CHN 1")?0:section(b).equals("CHN 2")?1:2;
-        return 0;
+        int channel=TimerModel.channelNumber(b);return channel==0?4:channel;
     }
     private static int roleRank(JSONObject b){int i=ROLES.indexOf(CloudModel.normal(b.optString("name")));return i<0?ROLES.size():i;}
     public static List<JSONObject> ordered(List<JSONObject> bosses) {
@@ -38,7 +39,8 @@ public final class CatalogLayout {
                 n=Integer.compare(roleRank(a),roleRank(b));if(n!=0)return n;
                 return CloudModel.normal(a.optString("name")).compareTo(CloudModel.normal(b.optString("name")));
             }
-            return 0; // Keep the existing chronological order inside other sections.
+            return CloudModel.normal(a.optString("name")).compareTo(CloudModel.normal(b.optString("name")));
         });return out;
     }
 }
+

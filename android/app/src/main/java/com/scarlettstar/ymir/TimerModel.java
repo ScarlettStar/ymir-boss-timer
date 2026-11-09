@@ -9,10 +9,31 @@ public final class TimerModel {
     private TimerModel() {}
     public static String profile(JSONObject boss) { return boss.optString("profile_id", "default"); }
     public static String key(JSONObject boss) { return "["+JSONObject.quote(profile(boss))+", "+JSONObject.quote(boss.optString("id"))+"]"; }
+    /** Explicit channel data only; never infer a channel from a boss name. */
+    public static int channelNumber(JSONObject boss) {
+        String raw=boss.optString("channel").trim().toUpperCase(Locale.ROOT);
+        if(raw.matches("(?:CHN|CH|CANAL|C)?\\s*[123]"))return Integer.parseInt(raw.replaceAll("[^123]",""));
+        Object external=boss.opt("hunt_channel");
+        if(external instanceof Number){double n=((Number)external).doubleValue();if(n>=1&&n<=3&&n==Math.rint(n))return (int)n;}
+        String key=boss.optString("hunt_auto_key");String[] parts=key.split("\\|",-1);
+        if(parts.length==3&&parts[2].matches("[123]"))return Integer.parseInt(parts[2]);
+        return 0;
+    }
+    public static String channelLabel(JSONObject boss){int n=channelNumber(boss);return n==0?"":"CHN "+n;}
+    public static List<String> channelChoices(JSONArray bosses,String pid)throws JSONException {
+        List<String> choices=new ArrayList<>(Arrays.asList("Todos","CHN 1","CHN 2"));
+        for(int i=0;i<bosses.length();i++){JSONObject b=bosses.getJSONObject(i);if(profile(b).equals(pid)&&channelNumber(b)==3){choices.add("CHN 3");break;}}
+        return choices;
+    }
     public static String location(JSONObject boss) {
+        String channel=channelLabel(boss);
         return boss.optString("category", REGIONS[0]) +
-            (boss.optString("channel").isEmpty() ? "" : " • " + boss.optString("channel")) +
+            (channel.isEmpty() ? "" : " • " + channel) +
             (boss.optString("floor").isEmpty() ? "" : " • " + boss.optString("floor"));
+    }
+    public static String deathLabel(JSONObject boss){
+        if(boss.optDouble("last_kill",0)<=0||boss.optDouble("end",0)<=0)return "";
+        return boss.optString("kill_source").equals("auto_estimated")?"MATEI AUTOMÁTICO • morte estimada":"MATEI • registro manual";
     }
     public static JSONObject newBoss(String name, int minutes, String region, String channel, String kind, String pid, boolean variable) throws JSONException {
         if (name.trim().isEmpty() || name.length() > 60 || minutes < 1 || minutes > 10080) throw new IllegalArgumentException("Informe nome e tempo de 1 a 10080 minutos.");
@@ -63,7 +84,7 @@ public final class TimerModel {
         List<JSONObject> result = new ArrayList<>();
         for (int i=0;i<bosses.length();i++) {
             JSONObject b = bosses.getJSONObject(i);
-            if (profile(b).equals(pid) && (channel.equals("Todos") || b.optString("channel").isEmpty() || channel.equals(b.optString("channel")))) result.add(b);
+            if (profile(b).equals(pid) && (channel.equals("Todos") || channelLabel(b).isEmpty() || channel.equals(channelLabel(b)))) result.add(b);
         }
         result.sort(Comparator.comparingDouble(b -> b.optDouble("end", 0) == 0 ? Double.MAX_VALUE : b.optDouble("end", 0)));
         return result;

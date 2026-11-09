@@ -33,7 +33,7 @@ public final class MainActivity extends Activity {
     private final Map<TextView,JSONObject> huntLabels=new LinkedHashMap<>();
     private final Runnable clock=new Runnable() {
         @Override public void run() {
-            if(System.currentTimeMillis()>nextCloud){nextCloud=System.currentTimeMillis()+60000;CloudSync.sync(MainActivity.this,false,ok->{if(ok)render();else if(cloudStatus!=null)cloudStatus.setText(CloudSync.status);});}
+            if(System.currentTimeMillis()>nextCloud){nextCloud=System.currentTimeMillis()+CloudSync.FOREGROUND_POLL_MS;CloudSync.sync(MainActivity.this,false,MainActivity.this::cloudRefreshed);}
             if(cloudStatus!=null)cloudStatus.setText(CloudSync.status);
             if(tab.equals("Caça")&&System.currentTimeMillis()>=nextHunt){nextHunt=System.currentTimeMillis()+15000;HuntLive.refresh(MainActivity.this,()->{if(tab.equals("Caça"))render();});}
             double now=System.currentTimeMillis()/1000.0;
@@ -74,7 +74,7 @@ public final class MainActivity extends Activity {
         // Insets API 30 is guarded separately for Android 8–10.
         else root.setFitsSystemWindows(true);
         TextView title=label("⚔  YMIR",28,ACCENT);title.setTypeface(null,Typeface.BOLD);root.addView(title);
-        root.addView(label("BOSS TIMER  •  ANDROID 0.4.0 • CAÇA AO VIVO",11,MUTED));
+        root.addView(label("BOSS TIMER  •  ANDROID 0.4.1 • CANAIS E CAÇA",11,MUTED));
         accountsBar=column();root.addView(accountsBar);
         LinearLayout navigation=row();for(String name:new String[]{"Bosses","Próximos","Caça"})rowButton(navigation,name,()->{tab=name;nextHunt=0;render();});root.addView(navigation);
         LinearLayout settingsNav=row();for(String name:new String[]{"Contas","Ajustes"})rowButton(settingsNav,name,()->{tab=name;render();});root.addView(settingsNav);
@@ -89,22 +89,30 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(clock);handler.post(clock);
     }
     @Override public void onPause() { handler.removeCallbacks(clock);super.onPause(); }
-    private void save(JSONObject next) throws Exception { store.write(next);state=next;AlarmScheduler.reschedule(this,next);render();CloudSync.sync(this,true,ok->{if(ok)render();}); }
+    private void cloudRefreshed(boolean ok) {
+        if(cloudStatus!=null)cloudStatus.setText(CloudSync.status);
+        if(!ok)return;
+        try{if(!CloudModel.equal(state,store.read()))render();}catch(Exception e){error(e);}
+    }
+    private void save(JSONObject next) throws Exception { store.write(next);state=next;AlarmScheduler.reschedule(this,next);render();CloudSync.sync(this,true,this::cloudRefreshed); }
     private void render() {
         if(body==null)return;
         try {
             state=store.read();
             channel=account(state,pid()).optString("channel_view","Todos");
-            if(!Arrays.asList("Todos","CHN 1","CHN 2").contains(channel))channel="Todos";
-            timers.clear();huntLabels.clear();accountsBar.removeAllViews();body.removeAllViews();
+            List<String> channelChoices=TimerModel.channelChoices(state.getJSONArray("bosses"),pid());
+            if(!channelChoices.contains(channel))channel="Todos";
+            timers.clear();huntLabels.clear();cloudStatus=null;accountsBar.removeAllViews();body.removeAllViews();
             JSONArray profiles=state.getJSONObject("profiles").getJSONArray("profiles");List<String> labels=new ArrayList<>();int active=0;
             for(int i=0;i<profiles.length();i++) { JSONObject p=profiles.getJSONObject(i);labels.add(p.getString("name")+" / "+p.optString("server","sem servidor"));if(p.getString("id").equals(pid()))active=i; }
             Spinner selector=spinner(labels);selector.setSelection(active);accountsBar.addView(selector);
             selector.setOnItemSelectedListener(new SimpleSelection(){@Override public void selected(int i){try {String id=profiles.getJSONObject(i).getString("id");if(!id.equals(pid())){JSONObject next=store.read();next.getJSONObject("profiles").put("active",id);query="";save(next);}}catch(Exception e){error(e);}}});
             if(tab.equals("Caça")){renderHunt();return;}
             if(tab.equals("Contas")){renderAccounts();return;}if(tab.equals("Ajustes")){renderSettings();return;}
-            LinearLayout channels=row();for(String c:new String[]{"Todos","CHN 1","CHN 2"})rowButton(channels,(channel.equals(c)?"● ":"")+c,()->{try{JSONObject next=store.read();account(next,pid()).put("channel_view",c);save(next);}catch(Exception e){error(e);}});body.addView(channels);
+            LinearLayout channels=row();for(String c:channelChoices)rowButton(channels,(channel.equals(c)?"● ":"")+c,()->{try{JSONObject next=store.read();account(next,pid()).put("channel_view",c);save(next);}catch(Exception e){error(e);}});body.addView(channels);
+            cloudStatus=label(CloudSync.status,12,MUTED);body.addView(cloudStatus);
             if(tab.equals("Bosses")) {
+                body.addView(label("Mortes recebidas do Boss Auto iniciam a contagem automaticamente.",12,MUTED));
                 addButton(body,"+ Cadastrar boss",this::bossDialog);
                 EditText search=input("Buscar boss, região ou canal",query,false);body.addView(search);
                 LinearLayout cards=column();body.addView(cards);
@@ -160,8 +168,8 @@ public final class MainActivity extends Activity {
             LinearLayout card=column();card.setPadding(dp(14),dp(10),dp(14),dp(12));card.setBackground(surface(PANEL));
             LinearLayout.LayoutParams layout=new LinearLayout.LayoutParams(-1,-2);layout.setMargins(0,dp(8),0,dp(4));container.addView(card,layout);
             card.addView(label(TimerModel.location(b)+" • "+b.optString("kind","Boss"),11,PURPLE));
-            if(b.optInt("hunt_channel",0)>0)card.addView(label("Canal "+b.optInt("hunt_channel")+" · Boss Auto",12,PURPLE));
-            if(b.optString("kill_source").equals("auto_estimated"))card.addView(label("Morte estimada pelo automático · confirme no jogo",12,WARNING));
+            String death=TimerModel.deathLabel(b);
+            if(!death.isEmpty()){card.addView(label(death,12,b.optString("kill_source").equals("auto_estimated")?WARNING:ACCENT));card.addView(label("Última morte: "+new SimpleDateFormat("dd/MM HH:mm:ss",Locale.getDefault()).format(new Date((long)(b.optDouble("last_kill")*1000))),12,MUTED));}
             TextView name=label(b.getString("name"),21,TEXT);name.setTypeface(null,Typeface.BOLD);card.addView(name);
             TextView time=label(countdown(b,System.currentTimeMillis()/1000.0),28,ACCENT);time.setTypeface(Typeface.MONOSPACE,Typeface.BOLD);card.addView(time);timers.put(time,b);
             if(b.optDouble("end",0)>0)card.addView(label((b.optBoolean("variable_respawn")?"Previsão: ":"Horário: ")+new SimpleDateFormat("dd/MM HH:mm:ss",Locale.getDefault()).format(new Date((long)(b.optDouble("end")*1000))),13,MUTED));

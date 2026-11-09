@@ -20,3 +20,8 @@ O painel **Caça** no Android e **Caça ao vivo** no Windows mostra mapa, boss, 
 
 ## Validação
 Testes cobrem isolamento entre contas/canais, repetição sem duplicar, conflitos com correção manual, fila persistente e atividade antiga. A ativação real exige publicar as regras e entrar com o login proprietário nos aplicativos.
+
+## Android 0.4.1
+A aba Bosses organiza todos os mapas por canal e nome, reconhecendo o canal explícito do Boss Auto. O filtro CHN 3 aparece quando existe nessa conta. Fólkvangr conserva a ordem por piso e classe. A apresentação não cria cópias nem altera mortes ou IDs.
+
+Ao receber a morte do Boss Auto, a aba principal mostra MATEI AUTOMÁTICO, a última morte e a contagem, sem apertar Matei novamente. O horário original é preservado; a morte continua estimada. Com o app aberto, a nuvem é consultada a cada 15s. Em segundo plano, permanece a consulta periódica do Android, que pode atrasar. A versão 0.4.1 instala sobre 0.4.0 com a mesma chave, preservando os dados.
