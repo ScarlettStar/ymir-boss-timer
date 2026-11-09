@@ -12,12 +12,20 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING,
                         BORDER, PURPLE, GamerButton, dashboard_counts)
 
 
-def location(boss):
+def _base_location(boss):
     if uses_channels(boss.get("category")):
         return region_label(boss["category"]) + " • " + (boss.get("channel") or "CHN 1")
     if boss.get("category") == "Bosses Fólkvangr":
         return "Fólkvangr • " + (boss.get("floor") or "P1")
     return "Universais" if boss.get("category", "Bosses Universais") == "Bosses Universais" else boss["category"]
+
+
+def location(boss):
+    label=_base_location(boss)
+    if boss.get('hunt_channel') in (1,2,3) and not uses_channels(boss.get('category')):
+        label+=' • Canal '+str(boss['hunt_channel'])
+    if boss.get('kill_source')=='auto_estimated':label+=' • morte estimada'
+    return label
 
 
 def remaining_text(seconds):
@@ -303,4 +311,5 @@ class YmirVisualMixin(ProductivityMixin, CommandCenterMixin, SmartTimersMixin, W
                 Path(marker).write_text(self.app_version, encoding="ascii")
             except OSError:
                 pass
+
 

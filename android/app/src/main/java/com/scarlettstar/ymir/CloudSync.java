@@ -20,7 +20,7 @@ public final class CloudSync {
     private static final int JOB=4312;
     private CloudSync() {}
     private static final class HttpError extends IOException {final int code;HttpError(int n){super(n==403?"Acesso negado. Confira as regras do Firebase.":n==429?"Limite temporário atingido. Tentaremos depois.":n==401?"Sessão expirada. Entre novamente.":"Não foi possível conectar à nuvem ("+n+").");code=n;}}
-    private static JSONObject request(String url,String method,JSONObject data,String token,boolean form)throws Exception {
+    static JSONObject request(String url,String method,JSONObject data,String token,boolean form)throws Exception {
         HttpURLConnection connection=(HttpURLConnection)new URL(url).openConnection();connection.setConnectTimeout(20000);connection.setReadTimeout(20000);connection.setInstanceFollowRedirects(false);connection.setRequestMethod(method);
         connection.setRequestProperty("Content-Type",form?"application/x-www-form-urlencoded":"application/json");if(token!=null)connection.setRequestProperty("Authorization","Bearer "+token);
         try{
@@ -50,7 +50,7 @@ public final class CloudSync {
             MAIN.post(()->{try{CloudVault.write(c,session);schedule(c);next=0;status="Conectado • aguardando sincronização";busy=false;done.done(true);sync(c,true,null);}catch(Exception e){busy=false;status="Não foi possível salvar a sessão protegida.";done.done(false);}});
         }catch(Exception e){MAIN.post(()->{busy=false;status="Não foi possível entrar. Confira e-mail, senha e configuração.";done.done(false);});}});
     }
-    public static void disconnect(Context c){if(busy)return;CloudVault.clear(c);c.getSystemService(JobScheduler.class).cancel(JOB);status="Desconectado • timers locais ativos";}
+    public static void disconnect(Context c){if(busy)return;CloudVault.clear(c);HuntLive.clear();c.getSystemService(JobScheduler.class).cancel(JOB);status="Desconectado • timers locais ativos";}
     public static void schedule(Context c){if(!connected(c))return;c.getSystemService(JobScheduler.class).schedule(new JobInfo.Builder(JOB,new ComponentName(c,CloudJob.class)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(15*60*1000L).setPersisted(true).build());}
     public static void sync(Context context,boolean force,Done callback){
         if(busy||(!force&&System.currentTimeMillis()<next)){if(callback!=null)callback.done(false);return;}
@@ -87,3 +87,4 @@ public final class CloudSync {
         throw new IOException("Conflito simultâneo. Tentaremos depois.");
     }
 }
+

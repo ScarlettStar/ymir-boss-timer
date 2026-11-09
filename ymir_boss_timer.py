@@ -1,3 +1,4 @@
+import copy
 import json
 import hashlib
 import shutil
@@ -27,7 +28,7 @@ from ymir_theme import (BG, PANEL, TEXT, MUTED, ACCENT, WARNING, DANGER,
                         BORDER, PURPLE, GamerButton, respawn_progress)
 
 APP_NAME = "Ymir Boss Timer"
-APP_VERSION = "3.6.2"
+APP_VERSION = "3.7.0"
 DEFAULT_UPDATE_REPO = "ScarlettStar/ymir-boss-timer"
 NEAR_RESPAWN_SECONDS = 5 * 60  # Próximos 5 minutos
 CATEGORIES = DEFAULT_REGIONS
@@ -607,6 +608,8 @@ try {
                             "warned_for": float(x.get("warned_for", 0)),
                             "finished_for": float(x.get("finished_for", 0)),
                             "last_kill": float(x.get("last_kill", 0))}
+                    for field in ('kill_source','manual_updated_at','hunt_event_id','hunt_lower','hunt_upper','hunt_map_id','hunt_channel','hunt_auto_key'):
+                        if field in x:boss[field]=copy.deepcopy(x[field])
                     if channel_region(category) == MYRKHEIMR and not boss["myrk_variable_v1"]:
                         boss["variable_respawn"] = True
                         boss["myrk_variable_v1"] = True
@@ -756,6 +759,8 @@ try {
                                  anchor="w", padx=12, pady=11, font=("Segoe UI", 10, "bold"))
             button.pack(fill="x", pady=4)
             setattr(self, attribute, button)
+        from ymir_hunt_ui import open_hunt
+        GamerButton(nav,text='⚔  Caça ao vivo',command=lambda:open_hunt(self),bg=PANEL,fg=ACCENT,anchor='w',padx=12,pady=11).pack(fill='x',pady=4)
         self.timer_view = tk.Frame(self.content, bg=BG)
         self.timer_view.pack(fill="both", expand=True)
         self.history_view = tk.Frame(self.content, bg=BG)
@@ -1153,6 +1158,8 @@ try {
         boss["end"] = killed_at + respawn_seconds(boss)
         boss["spawn_for"] = 0
         boss["last_kill"] = killed_at
+        boss["kill_source"] = "manual"
+        boss["manual_updated_at"] = now
         self.history.append({"name": boss["name"], "category": boss.get("category", CATEGORIES[0]),
                              "channel": boss.get("channel", "") if uses_channels(boss.get("category")) else "",
                              "floor": boss.get("floor", "") if boss.get("category") == FOLKVANGR else "",
@@ -1172,6 +1179,8 @@ try {
 
     def reset(self, boss):
         self.auto_update_idle_since = time.time()
+        boss["kill_source"]="manual"
+        boss["manual_updated_at"]=time.time()
         boss["end"] = 0
         boss["warned_for"] = 0
         boss["finished_for"] = 0
@@ -1304,6 +1313,7 @@ try {
             old_end = target.get("end", 0)
             killed_at = target.get("last_kill", 0)
             target["minutes"] = new_minutes
+            target["manual_updated_at"] = now
             if old_end and killed_at and target.get("spawn_for") != killed_at:
                 new_end = killed_at + respawn_seconds(target)
                 target["end"] = new_end
@@ -1583,4 +1593,5 @@ try {
 if __name__ == "__main__":
     app = BossTimerApp()
     app.mainloop()
+
 

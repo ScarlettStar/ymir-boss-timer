@@ -20,3 +20,17 @@ test('owner cannot list users, delete state, add fields or bypass size/schema',a
  for(const data of [{schema:2,payload:'{}'},{schema:1,payload:{}},{schema:1,payload:'{}',admin:true},{schema:1,payload:'x'.repeat(850001)}])await assertFails(setDoc(ref,data));
 });
 test('all unrelated documents denied',async()=>{await assertFails(setDoc(doc(env.authenticatedContext('alice').firestore(),'users/alice/other/data'),{schema:1,payload:'{}'}));});
+
+test('live hunt owner timestamp and isolation',async()=>{
+ const {serverTimestamp}=await import('firebase/firestore');
+ const own=env.authenticatedContext('alice').firestore(),ref=doc(own,'users/alice/automation/device');
+ await assertSucceeds(setDoc(ref,{schema:1,payload:'{}',receivedAt:serverTimestamp()}));
+ await assertSucceeds(getDoc(ref));await assertSucceeds(getDocs(collection(own,'users/alice/automation')));
+ for(const db of [env.unauthenticatedContext().firestore(),env.authenticatedContext('bob').firestore()]){
+  await assertFails(getDoc(doc(db,'users/alice/automation/device')));
+  await assertFails(getDocs(collection(db,'users/alice/automation')));
+  await assertFails(setDoc(doc(db,'users/alice/automation/device'),{schema:1,payload:'{}',receivedAt:serverTimestamp()}));
+ }
+ await assertFails(setDoc(ref,{schema:1,payload:'{}',receivedAt:new Date(0)}));
+ await assertFails(setDoc(ref,{schema:1,payload:'x'.repeat(60001),receivedAt:serverTimestamp()}));
+});

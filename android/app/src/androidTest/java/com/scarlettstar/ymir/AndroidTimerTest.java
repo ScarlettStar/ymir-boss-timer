@@ -76,4 +76,23 @@ public class AndroidTimerTest {
         instrumentation.waitForIdleSync();screen("ymir-regions.png");
         instrumentation.runOnMainSync(()->findButton("Fólkvangr").performClick());instrumentation.waitForIdleSync();screen("ymir-folk-order.png");assertTrue(CloudModel.equal(state,new Store(c).read()));
     }
+    @Test public void liveHuntShowsOnlySelectedProfileAndMarksStaleData()throws Exception {
+        Context c=context();Instrumentation instrumentation=InstrumentationRegistry.getInstrumentation();
+        JSONObject state=Store.empty();new Store(c).write(state);
+        java.lang.reflect.Field busy=HuntLive.class.getDeclaredField("busy"),owner=HuntLive.class.getDeclaredField("owner");busy.setAccessible(true);owner.setAccessible(true);
+        try {
+            instrumentation.runOnMainSync(()->{try{
+                CloudVault.write(c,new JSONObject().put("project","demo-ymir-test").put("api_key","not-a-real-key-1234567890").put("uid","fixture-owner").put("refresh","fixture-token").put("email","fixture@example.invalid"));
+                busy.setBoolean(null,true);owner.set(null,"demo-ymir-test:fixture-owner");
+                JSONObject row=new JSONObject().put("schema",1).put("device_id","fixture-pc").put("device_label","PC de teste").put("profile_id","default").put("running",true).put("paused",false).put("simulate",false).put("boss","Chefe em combate").put("map","Mapa teste").put("channel",2).put("stage","Em combate").put("next_visit","Próximo destino").put("received_at",System.currentTimeMillis()/1000.0-120);
+                HuntLive.rows=new JSONArray().put(row).put(new JSONObject(row.toString()).put("profile_id","other").put("boss","Chefe de outra conta"));
+                findButton("Caça").performClick();
+                StringBuilder texts=new StringBuilder();for(android.view.View v:views(activity.getActivity().getWindow().getDecorView()))if(v instanceof android.widget.TextView)texts.append(((android.widget.TextView)v).getText()).append("\n");
+                assertTrue(texts.toString().contains("Chefe em combate"));assertTrue(texts.toString().contains("SEM ATUALIZAÇÃO RECENTE"));assertFalse(texts.toString().contains("Chefe de outra conta"));
+            }catch(Exception e){throw new AssertionError(e);}});
+            instrumentation.waitForIdleSync();screen("ymir-hunt.png");
+        }finally{instrumentation.runOnMainSync(()->{try{CloudVault.clear(c);HuntLive.clear();busy.setBoolean(null,false);}catch(Exception e){throw new AssertionError(e);}});}
+    }
+
 }
+

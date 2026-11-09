@@ -124,6 +124,8 @@ class CloudMixin:
         threading.Thread(target=work, daemon=True).start()
 
     def build_cloud_settings(self, frame):
+        from ymir_hunt_ui import open_hunt
+        GamerButton(frame,text='Acompanhar caça do Boss Auto',command=lambda:open_hunt(self)).pack(anchor='w',padx=16,pady=6)
         tk.Label(frame, text='SINCRONIZAR PC E CELULAR', bg=BG, fg=ACCENT).pack(anchor='w', padx=16, pady=12)
         tk.Label(frame, textvariable=self.cloud_status, bg=BG, fg=TEXT, wraplength=550).pack(anchor='w', padx=16, pady=5)
         tk.Label(frame, text='Use o mesmo login do Ymir Boss Timer no PC e no Android. Todas as contas do jogo deste aparelho serão sincronizadas.\n\nAlertas e aparência são locais. Sem internet, as marcações ficam pendentes. No celular, abra o app para receber os últimos horários antes de depender dos alertas.', bg=BG, fg=MUTED, justify='left', wraplength=550).pack(padx=16, pady=8)
@@ -167,3 +169,4 @@ class CloudMixin:
             self.cloud_session = None
             self.cloud_status.set('Desconectado • timers locais continuam ativos')
         GamerButton(frame, text='Desconectar este aparelho', command=disconnect).pack(anchor='w', padx=16)
+
