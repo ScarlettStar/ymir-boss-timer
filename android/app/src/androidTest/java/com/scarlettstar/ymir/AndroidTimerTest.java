@@ -111,7 +111,8 @@ public class AndroidTimerTest {
         }catch(Exception e){throw new AssertionError(e);}});
         instrumentation.waitForIdleSync();screen("ymir-channels-auto.png");
         instrumentation.runOnMainSync(()->{findButton("CHN 2").performClick();String text=allText();assertTrue(text.contains("Boss canal 2"));assertFalse(text.contains("Boss canal 1"));assertFalse(text.contains("Boss canal 3"));findButton("CHN 3").performClick();assertTrue(allText().contains("Boss canal 3"));assertFalse(allText().contains("Boss canal 2"));});
-        JSONObject stored=new Store(c).read();assertEquals(killed,stored.getJSONArray("bosses").getJSONObject(0).getDouble("last_kill"),0);assertEquals(1,stored.getJSONArray("history").length());
+        JSONObject stored=new Store(c).read();JSONObject exact=Store.find(stored,"default",boss.getString("id"));assertNotNull(exact);assertEquals(killed,exact.getDouble("last_kill"),0);assertEquals(killed+600,exact.getDouble("end"),0);assertEquals(1,stored.getJSONArray("history").length());
+        for(int i=0;i<stored.getJSONArray("bosses").length();i++){JSONObject other=stored.getJSONArray("bosses").getJSONObject(i);if(!other.getString("id").equals(boss.getString("id")))assertEquals(0,other.getDouble("last_kill"),0);}
     }
 
 }
