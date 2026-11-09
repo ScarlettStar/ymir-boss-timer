@@ -94,5 +94,25 @@ public class AndroidTimerTest {
         }finally{instrumentation.runOnMainSync(()->{try{CloudVault.clear(c);HuntLive.clear();busy.setBoolean(null,false);}catch(Exception e){throw new AssertionError(e);}});}
     }
 
+    private String allText(){StringBuilder text=new StringBuilder();for(android.view.View v:views(activity.getActivity().getWindow().getDecorView()))if(v instanceof android.widget.TextView)text.append(((android.widget.TextView)v).getText()).append("\n");return text.toString();}
+    @Test public void mainTabReceivesAutomaticDeathAndFiltersAllThreeImportedChannels()throws Exception {
+        Context c=context();Instrumentation instrumentation=InstrumentationRegistry.getInstrumentation();JSONObject initial=Store.empty();
+        for(int channel=1;channel<=3;channel++)initial.getJSONArray("bosses").put(TimerModel.newBoss("Boss canal "+channel,10,"Vale de Ragnarök","","Boss","default",false).put("hunt_channel",channel));
+        new Store(c).write(initial);c.getSharedPreferences("catalog-layout",0).edit().clear().commit();
+        instrumentation.runOnMainSync(()->findButton("Bosses").performClick());
+        JSONObject received=new JSONObject(initial.toString()),boss=received.getJSONArray("bosses").getJSONObject(0);double killed=System.currentTimeMillis()/1000.0-5;
+        boss.put("last_kill",killed).put("end",killed+600).put("kill_source","auto_estimated").put("hunt_event_id","fixture-auto-event");
+        received.getJSONArray("history").put(new JSONObject().put("profile_id","default").put("boss_id",boss.getString("id")).put("name",boss.getString("name")).put("category","Vale de Ragnarök").put("killed_at",killed).put("respawn_at",killed+600));
+        Store store=new Store(c);store.importState(CloudModel.apply(initial,CloudModel.entities(received)));
+        java.lang.reflect.Method refresh=MainActivity.class.getDeclaredMethod("cloudRefreshed",boolean.class);refresh.setAccessible(true);
+        instrumentation.runOnMainSync(()->{try{
+            refresh.invoke(activity.getActivity(),true);String text=allText();assertTrue(text.contains("MATEI AUTOMÁTICO"));assertTrue(text.contains("Última morte:"));assertTrue(text.contains("CHN 3"));
+            assertTrue(text.contains("Boss canal 1"));assertTrue(text.contains("Boss canal 2"));assertTrue(text.contains("Boss canal 3"));
+        }catch(Exception e){throw new AssertionError(e);}});
+        instrumentation.waitForIdleSync();screen("ymir-channels-auto.png");
+        instrumentation.runOnMainSync(()->{findButton("CHN 2").performClick();String text=allText();assertTrue(text.contains("Boss canal 2"));assertFalse(text.contains("Boss canal 1"));assertFalse(text.contains("Boss canal 3"));findButton("CHN 3").performClick();assertTrue(allText().contains("Boss canal 3"));assertFalse(allText().contains("Boss canal 2"));});
+        JSONObject stored=new Store(c).read();assertEquals(killed,stored.getJSONArray("bosses").getJSONObject(0).getDouble("last_kill"),0);assertEquals(1,stored.getJSONArray("history").length());
+    }
+
 }
 

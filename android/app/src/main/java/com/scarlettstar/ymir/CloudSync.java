@@ -14,7 +14,10 @@ public final class CloudSync {
     private static final ExecutorService NETWORK=Executors.newSingleThreadExecutor();
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
     private static boolean busy=false;
+    public static final long FOREGROUND_POLL_MS=15000;
     private static long next=0;
+    private static String tokenSession="",accessToken="";
+    private static long tokenUntil=0;
     public static String status="Nuvem desconectada • dados locais";
     public interface Done {void done(boolean success);}
     private static final int JOB=4312;
@@ -50,13 +53,13 @@ public final class CloudSync {
             MAIN.post(()->{try{CloudVault.write(c,session);schedule(c);next=0;status="Conectado • aguardando sincronização";busy=false;done.done(true);sync(c,true,null);}catch(Exception e){busy=false;status="Não foi possível salvar a sessão protegida.";done.done(false);}});
         }catch(Exception e){MAIN.post(()->{busy=false;status="Não foi possível entrar. Confira e-mail, senha e configuração.";done.done(false);});}});
     }
-    public static void disconnect(Context c){if(busy)return;CloudVault.clear(c);HuntLive.clear();c.getSystemService(JobScheduler.class).cancel(JOB);status="Desconectado • timers locais ativos";}
+    public static void disconnect(Context c){if(busy)return;CloudVault.clear(c);HuntLive.clear();tokenSession="";accessToken="";tokenUntil=0;c.getSystemService(JobScheduler.class).cancel(JOB);status="Desconectado • timers locais ativos";}
     public static void schedule(Context c){if(!connected(c))return;c.getSystemService(JobScheduler.class).schedule(new JobInfo.Builder(JOB,new ComponentName(c,CloudJob.class)).setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPeriodic(15*60*1000L).setPersisted(true).build());}
     public static void sync(Context context,boolean force,Done callback){
         if(busy||(!force&&System.currentTimeMillis()<next)){if(callback!=null)callback.done(false);return;}
         Context c=context.getApplicationContext();final JSONObject session,snapshot,base;
         try{session=CloudVault.read(c);if(session==null){if(callback!=null)callback.done(true);return;}snapshot=new Store(c).read();base=baseline(c,session).getJSONObject("base");}catch(Exception e){status="Não foi possível ler dados de sincronização.";if(callback!=null)callback.done(false);return;}
-        busy=true;next=System.currentTimeMillis()+60000;status="Sincronizando…";
+        busy=true;next=System.currentTimeMillis()+FOREGROUND_POLL_MS;status="Sincronizando…";
         NETWORK.execute(()->{try{
             CloudModel.Merged result=exchange(session,base,CloudModel.entities(snapshot));
             MAIN.post(()->{try{
@@ -69,20 +72,25 @@ public final class CloudSync {
     }
     private static CloudModel.Merged exchange(JSONObject session,JSONObject base,JSONObject local)throws Exception {
         String project=session.getString("project"),api=session.getString("api_key");validateConfig(project,api);
-        JSONObject auth=request("https://securetoken.googleapis.com/v1/token?key="+api,"POST",new JSONObject().put("refresh_token",session.getString("refresh")),null,true);
-        if(!auth.getString("user_id").equals(session.getString("uid")))throw new IOException("Sessão inválida.");String token=auth.getString("id_token");
+        String identity=project+":"+session.getString("uid")+":"+session.getString("refresh");
+        if(!identity.equals(tokenSession)||SystemClock.elapsedRealtime()>=tokenUntil){
+            JSONObject auth=request("https://securetoken.googleapis.com/v1/token?key="+api,"POST",new JSONObject().put("refresh_token",session.getString("refresh")),null,true);
+            if(!auth.getString("user_id").equals(session.getString("uid")))throw new IOException("Sessão inválida.");
+            accessToken=auth.getString("id_token");tokenSession=identity;tokenUntil=SystemClock.elapsedRealtime()+3000000;
+        }
+        String token=accessToken;
         String url="https://firestore.googleapis.com/v1/projects/"+project+"/databases/(default)/documents/users/"+URLEncoder.encode(session.getString("uid"),"UTF-8")+"/sync/state";
         for(int attempt=0;attempt<4;attempt++){
             JSONObject remote;String condition;
             try{JSONObject document=request(url,"GET",null,token,false),fields=document.getJSONObject("fields");if(!fields.getJSONObject("schema").getString("integerValue").equals("1"))throw new IOException("Versão de nuvem incompatível.");String payload=fields.getJSONObject("payload").getString("stringValue");if(payload.getBytes(StandardCharsets.UTF_8).length>850000)throw new IOException("Nuvem muito grande.");remote=new JSONObject(payload);condition="currentDocument.updateTime="+URLEncoder.encode(document.getString("updateTime"),"UTF-8");}
-            catch(HttpError error){if(error.code!=404)throw error;remote=new JSONObject();condition="currentDocument.exists=false";}
+            catch(HttpError error){if(error.code==401)tokenUntil=0;if(error.code!=404)throw error;remote=new JSONObject();condition="currentDocument.exists=false";}
             CloudModel.validatePairing(base,local,remote);
             CloudModel.Merged merged=CloudModel.merge(base,local,remote,false);
             CloudModel.apply(Store.empty(),merged.records); // Validate before upload/application.
             if(CloudModel.equal(merged.records,remote))return merged;
             String payload=merged.records.toString();if(payload.getBytes(StandardCharsets.UTF_8).length>850000)throw new IOException("Dados excedem 850 KB; exporte backup e reduza histórico.");
             try{request(url+"?"+condition,"PATCH",new JSONObject().put("fields",new JSONObject().put("schema",new JSONObject().put("integerValue","1")).put("payload",new JSONObject().put("stringValue",payload))),token,false);return merged;}
-            catch(HttpError e){if(e.code!=409&&e.code!=412&&e.code!=400)throw e;}
+            catch(HttpError e){if(e.code==401)tokenUntil=0;if(e.code!=409&&e.code!=412&&e.code!=400)throw e;}
         }
         throw new IOException("Conflito simultâneo. Tentaremos depois.");
     }
