@@ -79,6 +79,7 @@ jobs:
             adb pull /sdcard/ymir-android.png ../ymir-android.png
             adb pull /sdcard/Download/ymir-regions.png ../ymir-regions.png
             adb pull /sdcard/Download/ymir-folk-order.png ../ymir-folk-order.png
+            adb pull /sdcard/Download/ymir-hunt.png ../ymir-hunt.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -88,3 +89,5 @@ jobs:
             ymir-android.png
             ymir-regions.png
             ymir-folk-order.png
+            ymir-hunt.png
+

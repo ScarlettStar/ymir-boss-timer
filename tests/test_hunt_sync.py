@@ -86,3 +86,31 @@ class HuntRestTests(unittest.TestCase):
     def test_empty_queue_does_not_write_state(self):
         transport=Mock(return_value=self.doc(records()));_,acks=self.client(transport).send_deaths([])
         self.assertEqual(acks,{});self.assertEqual(transport.call_count,1)
+
+
+@unittest.skipUnless(__import__('os').environ.get('YMIR_GUI_TESTS')=='1','Requires a desktop display')
+class HuntWindowTests(unittest.TestCase):
+    def test_panel_filters_account_and_marks_old_activity(self):
+        import tkinter as tk
+        import time
+        from ymir_hunt_ui import open_hunt
+        app=tk.Tk();app.withdraw();app.cloud_session={'project':'ymir-test','api_key':'a'*25,'uid':'owner','refresh':'fixture'}
+        app.active_profile_id=lambda:'default'
+        value=dict(schema=1,device_id='a'*32,profile_id='default',device_label='PC teste',running=True,paused=False,simulate=False,boss='Chefe atual',map='Mapa teste',channel=2,stage='Em combate',next_visit='Próximo chefe',received_at=time.time()-120)
+        hidden=dict(value,profile_id='other',boss='Boss de outra conta')
+        from unittest.mock import patch
+        try:
+            with patch('ymir_hunt_ui.HuntClient') as client:
+                client.return_value.live.return_value=[value,hidden]
+                open_hunt(app)
+                until=time.monotonic()+3
+                while time.monotonic()<until:
+                    app.update();time.sleep(.02)
+                labels=[];todo=[app.hunt_window]
+                while todo:
+                    widget=todo.pop();todo.extend(widget.winfo_children())
+                    if isinstance(widget,tk.Label):labels.append(widget.cget('text'))
+                text='\n'.join(labels)
+                self.assertIn('Chefe atual',text);self.assertIn('SEM ATUALIZAÇÃO RECENTE',text)
+                self.assertNotIn('Boss de outra conta',text)
+        finally:app.destroy()
